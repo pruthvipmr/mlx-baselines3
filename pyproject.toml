@@ -1,0 +1,61 @@
+[project]
+name = "mlx-baselines3"
+version = "0.1.0"
+description = "MLX implementation of Stable Baselines 3 for Apple Silicon"
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "mlx>=0.0.9",
+    "gymnasium>=0.29.0",
+    "numpy>=1.20.0",
+    "cloudpickle",
+]
+
+[project.optional-dependencies]
+tests = [
+    "pytest>=6.0",
+    "pytest-cov",
+]
+docs = [
+    "sphinx",
+    "sphinx-rtd-theme",
+]
+dev = [
+    "black",
+    "flake8",
+    "mypy",
+    "isort",
+]
+
+[project.urls]
+Homepage = "https://github.com/pruthvipmr/mlx-baselines3"
+Repository = "https://github.com/pruthvipmr/mlx-baselines3"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.black]
+line-length = 88
+target-version = ['py38']
+
+[tool.isort]
+profile = "black"
+line_length = 88
+
+[tool.flake8]
+max-line-length = 88
+extend-ignore = ["E203", "W503"]
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+pythonpath = ["."]

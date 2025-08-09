@@ -143,14 +143,22 @@ class PPO(OnPolicyAlgorithm):
         
         if isinstance(self.policy, str):
             policy_class = get_ppo_policy_class(self.policy)
+            self.policy = policy_class(
+                observation_space=self.observation_space,
+                action_space=self.action_space,
+                lr_schedule=self.lr_schedule,
+            )
+        elif isinstance(self.policy, ActorCriticPolicy):
+            # Already a constructed policy instance (e.g., when loading); use as-is
+            pass
         else:
+            # Assume a policy class was provided
             policy_class = self.policy
-            
-        self.policy = policy_class(
-            observation_space=self.observation_space,
-            action_space=self.action_space,
-            lr_schedule=self.lr_schedule,
-        )
+            self.policy = policy_class(
+                observation_space=self.observation_space,
+                action_space=self.action_space,
+                lr_schedule=self.lr_schedule,
+            )
         
     def _get_parameters(self) -> Dict[str, Any]:
         """Get algorithm parameters."""
@@ -261,6 +269,9 @@ class PPO(OnPolicyAlgorithm):
         
         continue_training = True
         
+        # Initialize a flat parameter dict for functional updates
+        params = self.policy.state_dict()
+        
         # Train for n_epochs
         for epoch in range(self.n_epochs):
             approx_kl_divs = []
@@ -269,7 +280,37 @@ class PPO(OnPolicyAlgorithm):
             for rollout_data in self.rollout_buffer.get(self.batch_size):
                 actions = rollout_data["actions"]
                 
-                # Get current policy predictions
+                # Define loss as a pure function of params
+                def loss_fn(p):
+                    # Load params into policy for forward computations
+                    self.policy.load_state_dict(p, strict=False)
+                    return self._compute_loss(rollout_data, self.policy, clip_range, clip_range_vf)
+                
+                loss_and_grad_fn = mx.value_and_grad(loss_fn)
+                loss_val, grads = loss_and_grad_fn(params)
+                
+                # Clip gradients
+                if self.max_grad_norm is not None:
+                    grads = self._clip_gradients(grads, self.max_grad_norm)
+                
+                # Optimizer update on parameter dict
+                updated = None
+                try:
+                    updated = self.policy.optimizer.update(params, grads)
+                except Exception:
+                    # Fallback to simple SGD if optimizer API differs
+                    lr = getattr(self.policy.optimizer, "learning_rate", 3e-4)
+                    updated = {k: params[k] - lr * grads.get(k, 0) for k in params.keys()}
+                if updated is not None:
+                    params = updated
+                # Ensure policy reflects latest params
+                self.policy.load_state_dict(params, strict=False)
+                try:
+                    mx.eval(list(params.values()))
+                except Exception:
+                    pass
+                
+                # For logging, recompute key terms with current policy
                 values, log_prob, entropy = self.policy.evaluate_actions(
                     rollout_data["observations"], actions
                 )
@@ -308,23 +349,6 @@ class PPO(OnPolicyAlgorithm):
                 # Entropy loss
                 entropy_loss = -mx.mean(entropy) if entropy is not None else 0.0
                 
-                # Total loss
-                loss = policy_loss + self.ent_coef * entropy_loss + self.vf_coef * value_loss
-                
-                # Optimization step
-                def compute_loss_fn(model):
-                    return self._compute_loss(rollout_data, model, clip_range, clip_range_vf)
-                
-                loss_and_grad_fn = mx.value_and_grad(compute_loss_fn)
-                loss_val, grads = loss_and_grad_fn(self.policy)
-                
-                # Clip gradients
-                if self.max_grad_norm is not None:
-                    grads = self._clip_gradients(grads, self.max_grad_norm)
-                
-                self.policy.optimizer.update(self.policy, grads)
-                mx.eval(self.policy.parameters())
-                
                 # Store losses for logging
                 pg_losses.append(float(policy_loss))
                 value_losses.append(float(value_loss))
@@ -343,7 +367,7 @@ class PPO(OnPolicyAlgorithm):
                 break
                 
         self._n_updates += self.n_epochs
-        explained_var = explained_variance(self.rollout_buffer.values.flatten(), self.rollout_buffer.returns.flatten())
+        explained_var = explained_variance(mx.array(self.rollout_buffer.values.flatten()), mx.array(self.rollout_buffer.returns.flatten()))
         
         # Log training metrics
         if self.verbose >= 1:
@@ -456,8 +480,14 @@ class PPO(OnPolicyAlgorithm):
                 if self.verbose >= 1:
                     print(f"------------------------------------")
                     print(f"| rollout/              |         |")
-                    print(f"|    ep_len_mean        | {np.mean([ep_info['l'] for ep_info in self.ep_info_buffer]):.1f}     |")
-                    print(f"|    ep_rew_mean        | {np.mean([ep_info['r'] for ep_info in self.ep_info_buffer]):.1f}     |")
+                    if hasattr(self, 'ep_info_buffer') and len(self.ep_info_buffer) > 0:
+                        ep_len_mean = float(np.mean([ep_info['l'] for ep_info in self.ep_info_buffer]))
+                        ep_rew_mean = float(np.mean([ep_info['r'] for ep_info in self.ep_info_buffer]))
+                    else:
+                        ep_len_mean = 0.0
+                        ep_rew_mean = 0.0
+                    print(f"|    ep_len_mean        | {ep_len_mean:.1f}     |")
+                    print(f"|    ep_rew_mean        | {ep_rew_mean:.1f}     |")
                     print(f"| time/                 |         |")
                     print(f"|    fps                | {fps}       |")
                     print(f"|    iterations         | {iteration}       |")

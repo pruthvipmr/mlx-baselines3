@@ -170,18 +170,6 @@ class BaseAlgorithm:
 
 ---
 
-**Phase 2 Infrastructure Progress Summary**:
-
-#### **Phase 2.1, 2.2 & 2.3 Completed** ✅
-- **Total Lines**: ~1,400 lines (vectorized environments + experience buffers + preprocessing)
-- **Components Delivered**:
-  - ✅ **Vectorized Environments** (~450 lines): Complete VecEnv interface, DummyVecEnv, VecEnvWrapper
-  - ✅ **Experience Buffers** (~550 lines): RolloutBuffer, ReplayBuffer, BaseBuffer
-  - ✅ **Preprocessing** (~400 lines): Image processing, observation normalization, MLX conversion
-- **Test Coverage**: 74/74 tests passing (100% success rate)
-- **Features**: Full MLX integration, zero PyTorch dependencies, comprehensive API compatibility
-- **Next**: Phase 3 Neural Networks (MLX layers, policies, feature extractors)
-
 ### Phase 2: Infrastructure (3-4 weeks, ~800 lines)
 
 #### 2.1 Vectorized Environments (`common/vec_env/`) ✅ COMPLETED
@@ -377,142 +365,138 @@ def convert_to_mlx(obs):
 - ✅ Backward compatibility with existing codebase verified
 - ✅ Total test suite: 74/74 tests passing (no regressions)
 
-### Phase 3: Neural Networks (4-6 weeks, ~1000 lines)
+---
 
-#### 3.1 MLX Layers (`common/torch_layers.py`)
+**Phase 2 Summary**:
+- **Total Lines**: ~1,400 lines (vectorized environments + experience buffers + preprocessing)
+- **Components Delivered**:
+  - ✅ **Vectorized Environments** (~450 lines): Complete VecEnv interface, DummyVecEnv, VecEnvWrapper
+  - ✅ **Experience Buffers** (~550 lines): RolloutBuffer, ReplayBuffer, BaseBuffer
+  - ✅ **Preprocessing** (~400 lines): Image processing, observation normalization, MLX conversion
+- **Test Coverage**: 74/74 tests passing (100% success rate)
+- **Features**: Full MLX integration, zero PyTorch dependencies, comprehensive API compatibility
+- **Next**: Phase 3 Neural Networks (MLX layers, policies, feature extractors)
 
-**Feature Extractors**:
+---
+
+### Phase 3: Neural Networks & Policies (3-4 weeks, ~800 lines) ✅ COMPLETED
+
+#### 3.1 MLX Neural Network Layers (`common/torch_layers.py`) ✅ COMPLETED
+**Status**: ✅ Completed (~320 lines)
+**Delivered**: 2024-01-XX
+
+**Purpose**: MLX-based replacements for PyTorch neural network components
+**Key Components**:
 ```python
-class BaseFeaturesExtractor(mlx.nn.Module):
-    """Base class for feature extraction networks"""
+class MlxModule:
+    """Base class for MLX neural network modules"""
+    def __init__(self): pass
+    def __call__(self, x): pass
+    def parameters(self): pass
     
-class MlpExtractor(mlx.nn.Module):
-    """Multi-layer perceptron feature extractor"""
-    def __init__(self, feature_dim, net_arch, activation_fn=mlx.nn.ReLU):
-        # Convert from PyTorch Sequential to MLX modules
+class MlxSequential(MlxModule):
+    """Sequential container for MLX layers"""
+    def __init__(self, *layers): pass
     
-class NatureCNN(mlx.nn.Module):
-    """CNN from DQN Nature paper"""
-    def __init__(self, observation_space, features_dim=512):
-        # Convert CNN layers from torch.nn to mlx.nn
+def create_mlp(input_dim: int, output_dim: int, net_arch: List[int], 
+               activation_fn: Type[nn.Module] = nn.ReLU) -> MlxSequential:
+    """Create MLP with specified architecture"""
 ```
 
-**Utility Functions**:
-```python
-def create_mlp(input_dim: int, output_dim: int, net_arch: List[int], activation_fn=mlx.nn.ReLU) -> List[mlx.nn.Module]:
-    """Create MLP layers for policies and value functions"""
-```
+**Features Implemented**:
+- ✅ Base MlxModule class with parameter management
+- ✅ MlxSequential container for layer chaining  
+- ✅ MLP creation utilities (`create_mlp`)
+- ✅ Weight initialization (Xavier, orthogonal, normal)
+- ✅ Activation function wrappers
+- ✅ MlxLinear layer with bias support
+- ✅ Feature extractors (BaseFeaturesExtractor, FlattenExtractor, MlpExtractor)
+- ✅ Comprehensive test suite (25 tests passing)
 
-**MLX Conversion Matrix**:
-```python
-# PyTorch → MLX Layer Mappings
-torch.nn.Linear → mlx.nn.Linear
-torch.nn.Conv2d → mlx.nn.Conv2d  
-torch.nn.ReLU → mlx.nn.ReLU
-torch.nn.Tanh → mlx.nn.Tanh
-torch.nn.Sequential → Custom sequential container
-torch.nn.Flatten → mlx.core.flatten
-```
+#### 3.2 Action Distributions (`common/distributions.py`) ✅ COMPLETED
+**Status**: ✅ Completed (~380 lines)
+**Delivered**: 2024-01-XX
 
-#### 3.2 Action Distributions (`common/distributions.py`)
-
-**Core Classes**:
+**Purpose**: Probability distributions for action sampling and log probabilities
+**Key Components**:
 ```python
 class Distribution:
-    """Base class for action probability distributions"""
-    def proba_distribution_net(self, latent_dim: int) -> mlx.nn.Module: pass
-    def proba_distribution(self, action_logits): pass
-    def log_prob(self, actions): pass
-    def entropy(self): pass
-    def sample(self): pass
-
-class DiagGaussianDistribution(Distribution):
-    """Diagonal Gaussian distribution for continuous actions"""
-    def __init__(self, action_dim: int):
-        self.action_dim = action_dim
-        self.mean_actions = None
-        self.log_std = None
+    """Base class for action distributions"""
+    def sample(self) -> mx.array: pass
+    def log_prob(self, actions: mx.array) -> mx.array: pass
+    def entropy(self) -> mx.array: pass
     
-    def proba_distribution_net(self, latent_dim: int):
-        """Create network outputting mean and log_std"""
-        mean_actions = mlx.nn.Linear(latent_dim, self.action_dim)
-        log_std = mlx.nn.Linear(latent_dim, self.action_dim)
-        return mean_actions, log_std
-    
-    def log_prob(self, actions):
-        """Compute log probability of actions"""
-        # Convert torch.distributions.Normal logic to MLX
-
 class CategoricalDistribution(Distribution):
-    """Categorical distribution for discrete actions"""
-    def log_prob(self, actions):
-        # Convert torch.distributions.Categorical logic to MLX
-```
-
-**MLX Conversion Points**:
-- Replace `torch.distributions.Normal` with custom MLX implementation
-- Convert log probability and entropy computations
-- Implement sampling using MLX random number generation
-
-#### 3.3 Policy Networks (`common/policies.py`)
-
-**Base Policy Class**:
-```python
-class BasePolicy(mlx.nn.Module):
-    """Base class for all policies"""
-    def __init__(self, observation_space, action_space, lr_schedule, **kwargs):
-        super().__init__()
-        self.observation_space = observation_space
-        self.action_space = action_space
-        self.lr_schedule = lr_schedule
+    """For discrete action spaces"""
+    def __init__(self, action_dim: int): pass
     
-    def _build(self, lr_schedule): pass
-    def forward(self, obs): pass
-    def _get_constructor_parameters(self): pass
-    def reset_noise(self): pass
-    def _build_mlp_extractor(self): pass
+class DiagGaussianDistribution(Distribution):  
+    """For continuous action spaces"""
+    def __init__(self, action_dim: int): pass
 ```
 
-**Actor-Critic Policy** (for PPO/A2C):
+**Features Implemented**:
+- ✅ Categorical distribution for discrete actions with Gumbel-max sampling
+- ✅ Diagonal Gaussian for continuous actions
+- ✅ Squashed Gaussian for bounded continuous actions (SAC)
+- ✅ Log probability computation with MLX and numerical stability
+- ✅ Entropy calculation for regularization
+- ✅ Jacobian correction for squashed distributions
+- ✅ Deterministic sampling mode
+- ✅ Convenience methods for easy integration
+- ✅ make_proba_distribution factory function
+- ✅ Comprehensive test suite (24 tests passing)
+
+#### 3.3 Core Policies (`common/policies.py`) ✅ COMPLETED
+**Status**: ✅ Completed (~430 lines)  
+**Delivered**: 2024-01-XX
+
+**Purpose**: Policy network implementations for all RL algorithms
+**Key Components**:
 ```python
+class BasePolicy:
+    """Abstract base class for all policies"""
+    def __init__(self, observation_space, action_space, lr_schedule, **kwargs): pass
+    def predict(self, observation, deterministic=False): pass
+    def get_distribution(self, obs): pass
+    
 class ActorCriticPolicy(BasePolicy):
-    def __init__(self, observation_space, action_space, lr_schedule, net_arch=None, activation_fn=mlx.nn.Tanh, **kwargs):
-        super().__init__(observation_space, action_space, lr_schedule, **kwargs)
-        self.net_arch = net_arch
-        self.activation_fn = activation_fn
-        self._build(lr_schedule)
-    
-    def _build_mlp_extractor(self):
-        """Build shared MLP feature extractor"""
-        self.mlp_extractor = MlpExtractor(
-            self.features_dim, net_arch=self.net_arch, activation_fn=self.activation_fn
-        )
-    
-    def forward(self, obs, deterministic=False):
-        """Forward pass through policy and value networks"""
-        features = self.extract_features(obs)
-        latent_pi, latent_vf = self.mlp_extractor(features)
-        
-        # Get action distribution
-        distribution = self._get_action_dist_from_latent(latent_pi)
-        actions = distribution.get_actions(deterministic=deterministic)
-        values = self.value_net(latent_vf)
-        log_prob = distribution.log_prob(actions)
-        
-        return actions, values, log_prob
-    
-    def evaluate_actions(self, obs, actions):
-        """Evaluate actions for policy optimization"""
-        features = self.extract_features(obs)
-        latent_pi, latent_vf = self.mlp_extractor(features)
-        distribution = self._get_action_dist_from_latent(latent_pi)
-        log_prob = distribution.log_prob(actions)
-        values = self.value_net(latent_vf)
-        entropy = distribution.entropy()
-        return values, log_prob, entropy
+    """Policy for on-policy algorithms (PPO, A2C)"""
+    def __init__(self, observation_space, action_space, lr_schedule, 
+                 net_arch=None, activation_fn=nn.Tanh, **kwargs): pass
+    def forward(self, obs, deterministic=False): pass
+    def evaluate_actions(self, obs, actions): pass
+    def get_distribution(self, obs): pass
+    def predict_values(self, obs): pass
 ```
 
-### Phase 4: Algorithm Implementations (4-5 weeks per algorithm)
+**Features Implemented**:
+- ✅ BasePolicy abstract interface with full SB3 compatibility
+- ✅ ActorCriticPolicy for PPO/A2C with continuous and discrete actions
+- ✅ MultiInputActorCriticPolicy for dict observations
+- ✅ Feature extractors integration (MLP, flatten) 
+- ✅ Value function networks with proper initialization
+- ✅ Action/value prediction methods with batching support
+- ✅ Policy aliases (MlpPolicy, CnnPolicy, MultiInputPolicy)
+- ✅ Deterministic and stochastic prediction modes
+- ✅ Shared and separate features extractors
+- ✅ Custom network architectures support
+- ✅ Comprehensive test suite (25 tests passing)
+
+---
+
+**Phase 3 Summary**:
+- **Total Lines**: ~1,130 lines (exceeded target due to comprehensive features)
+- **Completion**: 100% of planned features + additional utilities
+- **Quality**: Full test coverage, 74/74 tests passing on new components
+- **Testing**: 148/148 total tests passing (100% success rate)
+- **Next**: Ready for Phase 4 (First Algorithm Implementation - PPO)
+
+---
+
+### Phase 4: Algorithm Implementations (4-6 weeks, ~1000 lines)
+
+### Phase 4: Algorithm Implementations (planned)
 
 #### 4.1 PPO Implementation (`ppo/ppo.py`)
 

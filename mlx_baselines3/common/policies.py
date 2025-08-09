@@ -82,6 +82,9 @@ class BasePolicy(ABC):
         # Action distribution
         self.action_dist = make_proba_distribution(action_space, use_sde=use_sde)
         
+        # Initialize training mode
+        self.training = True
+        
         self._build(lr_schedule)
     
     @abstractmethod
@@ -172,6 +175,21 @@ class BasePolicy(ABC):
             Extracted features
         """
         return self.features_extractor(obs)
+        
+    def set_training_mode(self, mode: bool) -> None:
+        """
+        Put the policy in either training or evaluation mode.
+        
+        Args:
+            mode: If True, set to training mode, else set to evaluation mode
+        """
+        # In MLX, we don't have explicit training/eval modes like PyTorch
+        # This is mainly for API compatibility
+        self.training = mode
+        
+    def training_mode(self) -> bool:
+        """Check if the policy is in training mode."""
+        return getattr(self, 'training', True)
     
     def get_distribution(self, obs: MlxArray) -> Distribution:
         """
@@ -300,6 +318,9 @@ class ActorCriticPolicy(BasePolicy):
         # Initialize weights
         if self.ortho_init:
             self._apply_init_weights()
+            
+        # Create optimizer
+        self.optimizer = self.optimizer_class(learning_rate=self.lr_schedule(1))
     
     def _build_action_net(self, latent_dim: int) -> MlxModule:
         """Build the action network."""

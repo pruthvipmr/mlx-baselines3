@@ -165,14 +165,24 @@ class BaseAlgorithm(ABC):
             }
 
         # Get actions from policy
-        actions, values, log_probs = self.policy.predict(
+        actions, state = self.policy.predict(
             obs_tensor, state, episode_start, deterministic
         )
 
         # Convert back to numpy and remove batch dimension if needed
         actions = np.array(actions)
         if not vectorized_env:
-            actions = actions[0]
+            # For single environments, remove batch dimension
+            if len(actions.shape) > 0 and actions.shape[0] == 1:
+                actions = actions[0]
+                
+        # For discrete action spaces, return scalar; for continuous, return array
+        if isinstance(self.action_space, gym.spaces.Discrete) and not vectorized_env:
+            # Convert to scalar for discrete actions
+            actions = actions.item() if hasattr(actions, 'item') else actions
+        elif not vectorized_env:
+            # For continuous actions, ensure it's an array
+            actions = np.atleast_1d(actions)
 
         return actions, state
 

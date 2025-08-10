@@ -29,3 +29,63 @@
 - Uses `uv` (not pip/conda)
 - Dependencies in `pyproject.toml`
 - Lock file: `uv.lock`
+
+## Current File Structure
+
+```
+mlx-baselines3/
+├── mlx_baselines3/                    # Main package
+│   ├── __init__.py                    # Package entry point with algorithm imports
+│   ├── common/                        # Shared infrastructure
+│   │   ├── __init__.py
+│   │   ├── base_class.py             # BaseAlgorithm, OnPolicy/OffPolicy classes
+│   │   ├── buffers.py                # RolloutBuffer for on-policy algorithms
+│   │   ├── distributions.py          # Action distributions (Categorical, DiagGaussian)
+│   │   ├── policies.py               # Base policy classes (ActorCriticPolicy, etc.)
+│   │   ├── preprocessing.py          # Input preprocessing utilities
+│   │   ├── torch_layers.py           # MLX neural network layers
+│   │   ├── type_aliases.py           # Type definitions for arrays, schedules
+│   │   ├── utils.py                  # General utilities
+│   │   └── vec_env/                  # Vectorized environment support
+│   │       ├── __init__.py
+│   │       ├── base_vec_env.py       # VecEnv base class
+│   │       └── dummy_vec_env.py      # DummyVecEnv implementation
+│   ├── ppo/                          # PPO algorithm (✅ IMPLEMENTED)
+│   │   ├── __init__.py               # Exports PPO and policy aliases
+│   │   ├── policies.py               # PPO-specific policies (MlpPolicy, CnnPolicy)
+│   │   └── ppo.py                    # PPO algorithm implementation
+│   ├── a2c/                          # A2C algorithm (☐ TODO)
+│   │   └── __init__.py               # Placeholder
+│   ├── dqn/                          # DQN algorithm (☐ TODO)
+│   │   └── __init__.py               # Placeholder
+│   ├── sac/                          # SAC algorithm (☐ TODO)
+│   │   └── __init__.py               # Placeholder
+│   └── td3/                          # TD3 algorithm (☐ TODO)
+│       └── __init__.py               # Placeholder
+├── tests/                            # Test suite
+│   ├── test_buffers.py               # Buffer functionality tests
+│   ├── test_distributions.py         # Distribution math tests
+│   ├── test_imports.py               # Import compatibility tests
+│   ├── test_policies.py              # Policy tests
+│   ├── test_ppo.py                   # PPO algorithm tests
+│   ├── test_preprocessing.py         # Preprocessing tests
+│   ├── test_torch_layers.py          # Neural network layer tests
+│   └── test_vec_env.py               # VecEnv tests
+├── examples/                         # Usage examples (empty - TODO)
+├── notes/                            # Development documentation
+│   ├── initial_plan.md               # Original project plan
+│   ├── mlx-baselines3_spec.md        # Detailed technical specification
+│   └── phase4_bugs.md                # Known issues and fixes
+├── pyproject.toml                    # Project configuration and dependencies
+├── README.md                         # Project documentation
+├── AGENT.md                          # This file - development guide
+└── uv.lock                           # Dependency lock file
+```
+
+## Implementation Status
+- **✅ PPO**: Fully implemented with MLP/CNN policies, training loop, save/load
+- **✅ Common Infrastructure**: Base classes, buffers, distributions, policies, VecEnv
+- **☐ A2C/DQN/SAC/TD3**: Placeholder classes that raise NotImplementedError
+- **☐ ReplayBuffer**: Needed for off-policy algorithms (DQN/SAC/TD3)
+- **☐ Examples**: No example scripts yet
+- **☐ Advanced Features**: VecNormalize, callbacks, schedules need completion

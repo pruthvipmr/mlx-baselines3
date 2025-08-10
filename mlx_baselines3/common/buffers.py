@@ -137,6 +137,7 @@ class RolloutBuffer(BaseBuffer):
         gae_lambda: float = 1.0,
         gamma: float = 0.99,
         n_envs: int = 1,
+        normalize_advantage: bool = True,
     ):
         """
         Initialize the rollout buffer.
@@ -149,9 +150,11 @@ class RolloutBuffer(BaseBuffer):
             gae_lambda: GAE lambda parameter
             gamma: Discount factor
             n_envs: Number of parallel environments
+            normalize_advantage: Whether to normalize advantages
         """
         self.gae_lambda = gae_lambda
         self.gamma = gamma
+        self.normalize_advantage = normalize_advantage
         
         super().__init__(buffer_size, observation_space, action_space, device, n_envs)
         
@@ -240,8 +243,17 @@ class RolloutBuffer(BaseBuffer):
             
             self.advantages[step] = last_gae_lam
             
-        # Returns are advantages + values
+        # Returns are advantages + values (computed before normalization)
         self.returns = self.advantages + self.values
+        
+        # Optionally normalize advantages across all environments
+        # Note: This modifies advantages for training but keeps returns unchanged
+        if self.normalize_advantage:
+            advantages_flat = self.advantages.flatten()
+            advantages_mean = np.mean(advantages_flat)
+            advantages_std = np.std(advantages_flat)
+            if advantages_std > 1e-8:  # Avoid division by zero
+                self.advantages = (self.advantages - advantages_mean) / (advantages_std + 1e-8)
         
     def get(self, batch_size: Optional[int] = None) -> Generator[RolloutBatch, None, None]:
         """
@@ -337,6 +349,8 @@ class ReplayBuffer(BaseBuffer):
         # Additional storage for off-policy data
         self.rewards = np.zeros((self.buffer_size, self.n_envs), dtype=np.float32)
         self.dones = np.zeros((self.buffer_size, self.n_envs), dtype=np.bool_)
+        self.truncated = np.zeros((self.buffer_size, self.n_envs), dtype=np.bool_)
+        self.timeouts = np.zeros((self.buffer_size, self.n_envs), dtype=np.bool_)
         
         # Store next observations unless optimizing memory
         if not self.optimize_memory_usage:
@@ -367,7 +381,7 @@ class ReplayBuffer(BaseBuffer):
             action: Action taken
             reward: Reward received
             done: Episode termination flag
-            infos: Additional information
+            infos: Additional information (may contain TimeLimit.truncated and _timeout)
         """
         # Handle dictionary observations
         if isinstance(obs, dict):
@@ -386,6 +400,19 @@ class ReplayBuffer(BaseBuffer):
         self.actions[self.pos] = action.copy()
         self.rewards[self.pos] = reward.copy()
         self.dones[self.pos] = done.copy()
+        
+        # Extract truncation and timeout information from infos
+        truncated = np.zeros(self.n_envs, dtype=np.bool_)
+        timeouts = np.zeros(self.n_envs, dtype=np.bool_)
+        
+        for i, info in enumerate(infos):
+            if "TimeLimit.truncated" in info:
+                truncated[i] = info["TimeLimit.truncated"]
+            if "_timeout" in info:
+                timeouts[i] = info["_timeout"]
+                
+        self.truncated[self.pos] = truncated
+        self.timeouts[self.pos] = timeouts
         
         self.pos += 1
         if self.pos == self.buffer_size:
@@ -440,6 +467,8 @@ class ReplayBuffer(BaseBuffer):
             "next_observations": next_obs_batch,
             "dones": mx.array(self.dones[batch_inds, env_indices]),
             "rewards": mx.array(self.rewards[batch_inds, env_indices]),
+            "truncated": mx.array(self.truncated[batch_inds, env_indices]),
+            "timeouts": mx.array(self.timeouts[batch_inds, env_indices]),
         }
         
     def _get_next_obs_optimized(

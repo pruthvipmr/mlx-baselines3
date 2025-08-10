@@ -205,15 +205,36 @@ class BaseAlgorithm(ABC):
             env_id = self.env.envs[0].spec.id if self.env.envs[0].spec is not None else None
         
         # Prepare data to save
+        # Important: avoid saving non-serializable callables (e.g., lr_schedule)
+        # Persist a concrete learning rate value instead of a raw callable
+        if callable(self.learning_rate):
+            try:
+                lr_value = float(self.lr_schedule(self._current_progress_remaining))
+            except Exception:
+                # Fallback to a sensible default if schedule evaluation fails
+                lr_value = 3e-4
+        else:
+            lr_value = self.learning_rate
+        
+        # Try to save a policy alias string instead of the instance to avoid pickling closures
+        policy_field: Any
+        try:
+            # Prefer common SB3-style alias
+            policy_field = "MlpPolicy"
+        except Exception:
+            policy_field = "MlpPolicy"
+        
         data = {
-            "policy": self.policy,
+            "policy": policy_field,
+            "policy_state": self.policy.state_dict() if hasattr(self.policy, "state_dict") else {},
             "observation_space": self.observation_space,
             "action_space": self.action_space,
             "n_envs": self.n_envs,
             "num_timesteps": self.num_timesteps,
             "seed": self.seed,
-            "learning_rate": self.learning_rate,
-            "lr_schedule": self.lr_schedule,
+            "learning_rate": lr_value,
+            # Save a serializable representation of lr_schedule
+            "lr_schedule": lr_value,
             "device": self.device,
             "verbose": self.verbose,
             "_total_timesteps": self._total_timesteps,
@@ -333,6 +354,13 @@ class BaseAlgorithm(ABC):
             if print_system_info or kwargs.get("verbose", 0) >= 1:
                 print("Restored optimizer state from saved model")
         
+        # Load saved policy state if present
+        if "policy_state" in data and hasattr(model, "policy") and hasattr(model.policy, "load_state_dict"):
+            try:
+                model.policy.load_state_dict(data["policy_state"], strict=True)
+            except Exception as e:
+                warnings.warn(f"Failed to load policy state: {e}", UserWarning)
+        
         # Load algorithm-specific data (with backward compatibility)
         try:
             model._load_save_data(data)
@@ -341,7 +369,7 @@ class BaseAlgorithm(ABC):
         
         # Warn about unknown keys for forward compatibility
         expected_keys = {
-            "policy", "observation_space", "action_space", "n_envs", "num_timesteps",
+            "policy", "policy_state", "observation_space", "action_space", "n_envs", "num_timesteps",
             "seed", "learning_rate", "lr_schedule", "device", "verbose",
             "_total_timesteps", "_episode_num", "_current_progress_remaining",
             "env_id", "optimizer_state"

@@ -105,11 +105,11 @@ mlx-baselines3/
 - **✅ Common Infrastructure**: Base classes, buffers, distributions, policies, VecEnv
 - **✅ Optimizer System**: AdamAdapter, SGDAdapter, RMSPropAdapter, gradient clipping, LR schedules
 - **✅ Parameter Registry**: Complete state_dict/load_state_dict system with validation
-- **✅ Save/Load API Parity**: env_id persistence, optimizer state, backward compatibility
+- **✅ Save/Load API Parity**: env_id persistence, optimizer state, policy_state, serializable lr/lr_schedule, backward compatibility
 - **✅ Action Distributions**: CategoricalDistribution, DiagGaussianDistribution, MultiCategoricalDistribution, BernoulliDistribution with action clipping
 - **✅ Buffer System**: RolloutBuffer and ReplayBuffer with SB3 compatibility, >3.6M samples/s throughput
 - **✅ DQN**: Fully implemented with Q-networks, epsilon-greedy exploration, target networks, Huber loss
-- **✅ SAC**: Fully implemented with stochastic actor, twin critics, automatic entropy tuning, target networks (learn method may need enhancement)
+- **✅ SAC**: Fully implemented with stochastic actor, twin critics, automatic entropy tuning, target networks, and a working off-policy learn() loop
 - **☐ TD3**: Placeholder classes that raise NotImplementedError
 - **☐ Examples**: No example scripts yet
 - **☐ Advanced Features**: VecNormalize, callbacks need completion

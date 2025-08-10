@@ -126,11 +126,13 @@ Each new algo must ship with: policy/model classes, loss impl, replay/rollout lo
 **✅ SECTION 4 COMPLETED - Implementation Notes:**
 - Enhanced `BaseAlgorithm.save()` to extract and persist `env_id` from environment spec
 - Added optimizer state saving including Adam moments and step count
-- Updated `BaseAlgorithm.load()` to recreate environments from saved `env_id`
+- Persist `policy_state` (complete `state_dict`) and a serializable `policy` alias
+- Store a serializable value for `learning_rate` and `lr_schedule` (current float)
+- Updated `BaseAlgorithm.load()` to recreate environments from saved `env_id` and restore `policy_state`
 - Implemented automatic wrapping of recreated environments in `DummyVecEnv` for PPO compatibility
 - Added comprehensive backward compatibility with unknown key warning system
 - Fixed `obs_as_mlx()` utility to handle MLX arrays that are already converted
-- Created comprehensive test suite in `tests/test_save_load_api_parity.py` covering all requirements
+- Created comprehensive test suite in `tests/test_save_load_api_parity.py` and verified PPO/A2C round-trips
 - All acceptance criteria verified: env-less loading, deterministic predictions, fallback handling
 
 ---
@@ -236,10 +238,13 @@ Each new algo must ship with: policy/model classes, loss impl, replay/rollout lo
 - Full support for discrete, continuous, MultiDiscrete, and MultiBinary action spaces
 - Comprehensive test suite in `tests/test_a2c.py` with 15+ test cases
 - **Performance verified**: A2C achieves 212.8 average reward on CartPole-v1 (target: 200)
-- **Known Issue**: Save/load functionality has pickle error ("cannot pickle 'function' object")
-  - Basic training, prediction, and optimizer functionality all work correctly
-  - Issue appears to be related to learning rate schedule functions not being picklable
-  - PPO save/load works fine, so A2C-specific code (likely RMSProp) causes the issue
+- ✅ Save/Load bug fixed: Addressed pickle error ("cannot pickle 'function' object")
+  - Root cause: non-serializable callables (`lr_schedule`) and objects referenced from policy during save
+  - Fixes:
+    - Save a serializable representation for `learning_rate` and `lr_schedule` (current float value)
+    - Save `policy_state` (policy `state_dict`) and reload it on `load()`
+    - Save a policy alias (e.g., `"MlpPolicy"`) instead of the policy instance
+  - Verified by passing `tests/test_a2c.py::TestA2CSaveLoad::*`
 
 ---
 
@@ -293,7 +298,7 @@ Each new algo must ship with: policy/model classes, loss impl, replay/rollout lo
 - Comprehensive test suite with 12 tests covering initialization, prediction, forward passes, and parameter handling
 - All core SAC components implemented: actor_forward, critic_forward, critic_target_forward
 - Proper action clipping and scaling to respect action space bounds
-- **Known Issue**: Training loop (learn method) inherits from base class but may need SAC-specific implementation for full functionality
+- ✅ Implemented SAC-specific `learn()` loop (off-policy): env stepping, replay buffer filling, and periodic training according to `train_freq`/`gradient_steps`. Also fixed MLX-specific issues (`mx.no_grad` removal) and ensured correct batching for non-Vec envs. Verified by `tests/test_sac.py::TestSAC::test_sac_short_training`.
 - **Key Features**: Supports MlpPolicy (CNN and MultiInput policies marked as not yet implemented)
 
 ---

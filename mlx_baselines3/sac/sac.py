@@ -138,17 +138,20 @@ class SAC(OffPolicyAlgorithm):
             self.ent_coef_optimizer = None
         
         super().__init__(
-            policy=policy,
-            env=env,
-            learning_rate=learning_rate,
-            device=device,
-            verbose=verbose,
-            seed=seed,
-            supported_action_spaces=[gym.spaces.Box],
-            replay_buffer_class=replay_buffer_class,
-            replay_buffer_kwargs=replay_buffer_kwargs,
+        policy=policy,
+        env=env,
+        learning_rate=learning_rate,
+        device=device,
+        verbose=verbose,
+        seed=seed,
+        supported_action_spaces=[gym.spaces.Box],
+        replay_buffer_class=replay_buffer_class,
+        replay_buffer_kwargs=replay_buffer_kwargs,
         )
-
+        
+        # Training/update counters
+        self._n_updates = 0
+        
         # SAC is only for continuous action spaces
         if not isinstance(self.action_space, gym.spaces.Box):
             raise ValueError("SAC only supports continuous action spaces (Box)")
@@ -276,11 +279,11 @@ class SAC(OffPolicyAlgorithm):
             replay_data = self.replay_buffer.sample(batch_size)
             
             # Convert to MLX arrays
-            observations = obs_as_mlx(replay_data.observations)
-            actions = mx.array(replay_data.actions)
-            next_observations = obs_as_mlx(replay_data.next_observations)
-            rewards = mx.array(replay_data.rewards).flatten()
-            dones = mx.array(replay_data.dones).flatten()
+            observations = obs_as_mlx(replay_data["observations"])
+            actions = mx.array(replay_data["actions"])
+            next_observations = obs_as_mlx(replay_data["next_observations"])
+            rewards = mx.array(replay_data["rewards"]).flatten()
+            dones = mx.array(replay_data["dones"]).flatten()
 
             # Current entropy coefficient
             if self.ent_coef == "auto":
@@ -310,16 +313,16 @@ class SAC(OffPolicyAlgorithm):
         # Increment number of updates
         self._n_updates += gradient_steps
 
-        # Store training stats
-        self.logger.record("train/n_updates", self._n_updates, exclude="tensorboard")
-        self.logger.record("train/actor_loss", safe_mean(actor_losses))
-        self.logger.record("train/critic_loss", safe_mean(critic_losses))
-        
-        if len(ent_coef_losses) > 0:
-            self.logger.record("train/ent_coef_loss", safe_mean(ent_coef_losses))
-            self.logger.record("train/ent_coef", safe_mean(ent_coefs))
-        elif self.ent_coef != "auto":
-            self.logger.record("train/ent_coef", self.ent_coef)
+        # Store training stats (optional logger)
+        if hasattr(self, "logger"):
+            self.logger.record("train/n_updates", self._n_updates, exclude="tensorboard")
+            self.logger.record("train/actor_loss", safe_mean(actor_losses))
+            self.logger.record("train/critic_loss", safe_mean(critic_losses))
+            if len(ent_coef_losses) > 0:
+                self.logger.record("train/ent_coef_loss", safe_mean(ent_coef_losses))
+                self.logger.record("train/ent_coef", safe_mean(ent_coefs))
+            elif self.ent_coef != "auto":
+                self.logger.record("train/ent_coef", self.ent_coef)
 
     def _update_critics(
         self,
@@ -343,20 +346,19 @@ class SAC(OffPolicyAlgorithm):
             features = self.policy.extract_features(observations)
             current_q_values = self.policy.critic_forward(features, actions)
             
-            # Compute target Q-values
-            with mx.no_grad():
-                next_features = self.policy.extract_features(next_observations)
-                next_actions, next_log_probs, _ = self.policy.actor_forward(next_features)
-                target_q_values = self.policy.critic_target_forward(next_features, next_actions)
-                
-                # Take minimum of target Q-values (clipped double Q-learning)
-                target_q = mx.minimum(target_q_values[0], target_q_values[1])
-                
-                # Add entropy term to target Q-values
-                target_q = target_q - ent_coef * next_log_probs.reshape(-1, 1)
-                
-                # Compute target values with Bellman backup
-                target_q = rewards.reshape(-1, 1) + (1 - dones.reshape(-1, 1)) * self.gamma * target_q
+            # Compute target Q-values (no explicit no_grad in MLX)
+            next_features = self.policy.extract_features(next_observations)
+            next_actions, next_log_probs, _ = self.policy.actor_forward(next_features)
+            target_q_values = self.policy.critic_target_forward(next_features, next_actions)
+            
+            # Take minimum of target Q-values (clipped double Q-learning)
+            target_q = mx.minimum(target_q_values[0], target_q_values[1])
+            
+            # Add entropy term to target Q-values
+            target_q = target_q - ent_coef * next_log_probs.reshape(-1, 1)
+            
+            # Compute target values with Bellman backup
+            target_q = rewards.reshape(-1, 1) + (1 - dones.reshape(-1, 1)) * self.gamma * target_q
             
             # Compute losses for both critics
             critic_losses = []
@@ -454,10 +456,9 @@ class SAC(OffPolicyAlgorithm):
             """Compute entropy coefficient loss."""
             log_ent_coef = ent_params["log_ent_coef"]
             
-            # Forward pass through actor to get log_probs
-            with mx.no_grad():
-                features = self.policy.extract_features(observations)
-                _, log_probs, _ = self.policy.actor_forward(features)
+            # Forward pass through actor to get log_probs (no explicit no_grad in MLX)
+            features = self.policy.extract_features(observations)
+            _, log_probs, _ = self.policy.actor_forward(features)
             
             # Entropy coefficient loss: -alpha * (log_prob + target_entropy)
             ent_coef_loss = -mx.mean(log_ent_coef * (log_probs + self.target_entropy))
@@ -506,30 +507,103 @@ class SAC(OffPolicyAlgorithm):
         self,
         total_timesteps: int,
         callback = None,
-        log_interval: int = 4,
+        log_interval: int = 1000,
         tb_log_name: str = "SAC",
         reset_num_timesteps: bool = True,
         progress_bar: bool = False,
     ):
         """
-        Learn using SAC algorithm.
-        
-        Args:
-            total_timesteps: Total number of timesteps to train for
-            callback: Callback function called during training
-            log_interval: Number of timesteps between progress updates
-            tb_log_name: Name for tensorboard logs
-            reset_num_timesteps: Whether to reset timestep counter
-            progress_bar: Whether to show progress bar
+        Run the SAC off-policy training loop.
+        This fills the replay buffer with environment interactions and performs
+        gradient updates according to train_freq/gradient_steps.
         """
-        return super().learn(
-            total_timesteps=total_timesteps,
-            callback=callback,
-            log_interval=log_interval,
-            tb_log_name=tb_log_name,
-            reset_num_timesteps=reset_num_timesteps,
-            progress_bar=progress_bar,
-        )
+        # Reset counters
+        if reset_num_timesteps:
+            self.num_timesteps = 0
+            self._episode_num = 0
+        self._total_timesteps = total_timesteps
+        
+        # Simple callback shim
+        if callback is None:
+            from types import SimpleNamespace
+            callback = SimpleNamespace()
+            callback.on_training_start = lambda *args, **kwargs: None
+            callback.on_step = lambda *args, **kwargs: True
+            callback.on_training_end = lambda *args, **kwargs: None
+        
+        # Initial reset
+        if not hasattr(self, "_last_obs") or self._last_obs is None:
+            reset_out = self.env.reset()
+            if isinstance(reset_out, tuple):
+                obs0, _ = reset_out
+            else:
+                obs0 = reset_out
+            # Ensure batch dim for non-Vec envs
+            if not hasattr(self.env, 'num_envs') or self.n_envs == 1:
+                self._last_obs = np.expand_dims(obs0, 0)
+            else:
+                self._last_obs = obs0
+        if not hasattr(self, "_last_episode_starts"):
+            self._last_episode_starts = np.ones((self.n_envs,), dtype=bool)
+        
+        callback.on_training_start(locals(), globals())
+        
+        timesteps_since_last_train = 0
+        
+        while self.num_timesteps < total_timesteps:
+            # Sample action(s)
+            actions = self._sample_action(self.learning_starts, self.action_noise, n_envs=self.n_envs)
+            
+            # Step the environment (handle non-Vec single env API)
+            if self.n_envs == 1 and not hasattr(self.env, 'num_envs'):
+                step_action = actions if np.asarray(actions).ndim == 1 else actions[0]
+                obs_, reward, terminated, truncated, info = self.env.step(step_action)
+                done = np.array([terminated or truncated])
+                new_obs = np.expand_dims(obs_, 0)
+                rewards = np.expand_dims(np.array([reward], dtype=np.float32), 0)
+                infos = [info]
+            else:
+                new_obs, rewards, done, infos = self.env.step(actions)
+                done = np.array(done)
+            
+            # Ensure batch dimensions for replay buffer
+            if not isinstance(new_obs, dict) and new_obs.ndim == len(self.observation_space.shape):
+                new_obs = np.expand_dims(new_obs, 0)
+            if not isinstance(self._last_obs, dict) and self._last_obs is not None and self._last_obs.ndim == len(self.observation_space.shape):
+                last_obs_batched = np.expand_dims(self._last_obs, 0)
+            else:
+                last_obs_batched = self._last_obs
+            if np.asarray(rewards).ndim == 1:
+                rewards = np.expand_dims(rewards, 0)
+            if np.asarray(actions).ndim == len(self.action_space.shape) + 1:
+                actions_batched = actions
+            else:
+                actions_batched = np.expand_dims(actions, 0)
+            
+            # Store transition in replay buffer
+            self.replay_buffer.add(last_obs_batched, new_obs, actions_batched, rewards, done, infos)
+            
+            self._last_obs = new_obs
+            self._last_episode_starts = done
+            
+            # Increment timesteps
+            self.num_timesteps += self.n_envs
+            timesteps_since_last_train += self.n_envs
+            
+            # Update learning progress
+            self._update_current_progress_remaining(self.num_timesteps, total_timesteps)
+            
+            # Train according to frequency
+            if self.num_timesteps >= self.learning_starts and timesteps_since_last_train >= int(self.train_freq):
+                self.train(self.gradient_steps, batch_size=self.batch_size)
+                timesteps_since_last_train = 0
+            
+            # Callback step
+            if callback is not None and not callback.on_step():
+                break
+        
+        callback.on_training_end()
+        return self
 
     def _excluded_save_params(self) -> List[str]:
         """

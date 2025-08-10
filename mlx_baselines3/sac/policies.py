@@ -136,11 +136,16 @@ class SACPolicy(BasePolicy):
         else:
             # No hidden layers - use identity
             self.actor_net = create_mlp(features_dim, features_dim, [], self.activation_fn)
+        # Register actor_net as submodule
+        self.add_module("actor_net", self.actor_net)
         
-        # Actor head: outputs mean and log_std
+        # Actor head: outputs mean and log_std using MLX-native linear layers
+        from mlx_baselines3.common.torch_layers import MlxLinear
         latent_dim = actor_arch[-1] if actor_arch else features_dim
-        self.mu = nn.Linear(latent_dim, self.action_dim)
-        self.log_std = nn.Linear(latent_dim, self.action_dim)
+        mu_layer = MlxLinear(latent_dim, self.action_dim)
+        log_std_layer = MlxLinear(latent_dim, self.action_dim)
+        self.add_module("mu", mu_layer)
+        self.add_module("log_std", log_std_layer)
 
         # Build twin critics (Q1 and Q2)
         self.q_networks = []

@@ -1,0 +1,402 @@
+
+# MLX‑Baselines3: Technical Spec & TODO (Drop‑in SB3 Replacement)
+
+**Owner:** @pruthvipmr  
+**Purpose:** Precise engineering plan for completing a Stable‑Baselines3‑compatible RL library on Apple’s MLX.  
+**Output:** A library that mirrors SB3’s public API and behavior where feasible, with correct training, save/load, and tests.
+
+---
+
+## 0) Global Goals & Non‑Goals
+
+**Goals**
+- SB3 parity at the *user‑facing* level for algorithms, policies, buffers, callbacks, save/load, and `VecEnv` basics.
+- MLX‑native training loops (functional gradients), correct autograd, Adam optimizer support.
+- Deterministic tests on macOS (CPU and Apple GPU) with CI.
+
+**Non‑Goals (for now)**
+- Full feature parity with every SB3 edge case (e.g., HER, MultiProcessing VecEnv, Onnx export).
+- Perfect performance tuning/JIT fusion beyond low‑hanging fruit.
+
+**Target minimal algo set for v0.1.0**
+- ✅ `PPO` (present, keep hardening)
+- ☐ `A2C`
+- ☐ `DQN`
+- ☐ `SAC`
+- ☐ `TD3`
+
+Each new algo must ship with: policy/model classes, loss impl, replay/rollout logic, save/load, examples, and tests.
+
+---
+
+## 1) Public API & Package Layout
+
+**Requirements**
+- Preserve SB3‑style constructors and fluent API:  
+  `model = Algo("MlpPolicy", env, **kwargs).learn(steps).save(path)`; `Algo.load(path, env=...)`.
+- Keep policy aliases: `"MlpPolicy"`, `"CnnPolicy"`, `"MultiInputPolicy"`.
+- Maintain kwargs naming and semantics (clip ranges, schedules, target_kl, ent_coef, vf_coef, gamma, gae_lambda, etc.).
+
+**Actions**
+- ✅ Ensure `__init__.py` exposes the same top‑level symbols SB3 users expect (algos, policy aliases).
+- ☐ Add/align exceptions (`ValueError` vs `AssertionError`) to match SB3 behaviors where reasonable.
+- ✅ Add `__version__` and `show_versions()` utility.
+
+**Acceptance**
+- ✅ Import matrix works: `from mlx_baselines3 import PPO, A2C, DQN, SAC, TD3` and policy aliases.  
+- ✅ Running simple SB3‑style snippets does not error out on missing symbols.
+
+**Implementation Notes**
+- Added placeholder classes for unimplemented algorithms (A2C, DQN, SAC, TD3) that raise NotImplementedError with clear messages
+- Exposed policy aliases (MlpPolicy, CnnPolicy, MultiInputPolicy) at top level from PPO module  
+- Added show_versions() utility function with dependency version detection
+- Version info is synchronized with pyproject.toml (0.1.0)
+
+---
+
+## 2) MLX Optimizers & Gradient Flow (Critical Path)
+
+**Problem**
+- Training must use true Adam (or configured optimizer) over parameter *dicts* via MLX functional autograd.
+
+**Actions**
+- ☐ Implement/verify a stable optimizer adapter: `optimizer.update(params, grads, state) -> (new_params, new_state)`.
+  - Keep mutable `state` (e.g., Adam moments) on the policy/algorithm object.
+  - Do **not** rely on “best‑effort” fallback to SGD except in tests; guard with a loud warning.
+- ☐ Centralize gradient computation helpers:  
+  `loss_and_grad = mx.value_and_grad(loss_fn)`; `loss_fn(params, batch, aux_cfg)` must be *pure* in terms of params.
+- ☐ Clip gradients by global norm prior to optimizer step; unit test both pre‑ and post‑clip norms.
+- ☐ LR schedules: support callables or `linear_schedule` equivalents; update optimizer LR per update.
+
+**Acceptance**
+- Unit test confirms Adam moments evolve (i.e., changing optimizer state across steps).
+- Removing the fallback does not break PPO training on CartPole.
+- Numerical parity: single minibatch update produces identical param deltas across two calls with identical random seeds.
+
+---
+
+## 3) Parameter Registry & State Dict
+
+**Problem**
+- All trainable parameters must be discoverable, serializable, and loadable (including nested modules and targets).
+
+**Actions**
+- ☐ Ensure every submodule is registered in a tree (e.g., via `add_module("name", submod)`).  
+  *Special case:* If you have an `MlpExtractor`/feature net, register it so its layers appear in `state_dict()`.
+- ☐ Implement/verify: `named_parameters()`, `parameters()`, `state_dict()`, `load_state_dict(strict=True|False)` for all policies.
+- ☐ Include target networks (SAC/TD3) in `state_dict()` under distinct prefixes (`target_critic1.*`, etc.).
+- ☐ Add checksum/shape checks in `load_state_dict` to early‑fail on incompatible tensors.
+
+**Acceptance**
+- Save→Load round‑trip bit‑identical params for PPO.
+- For SAC, state dict contains actor, critics, target critics, and entropy‑coef (α) params when autotuning is enabled.
+- Unit test ensures `strict=True` catches missing/mismatched keys; `strict=False` tolerates extra keys with warnings.
+
+---
+
+## 4) Save/Load API Parity
+
+**Actions**
+- ☐ `save(path)`: persist model config, policy state dict, spaces, hyperparameters, optimizer state (including Adam moments), and **env_id** if available.
+- ☐ `load(path, env=None)`: reconstruct model; if `env is None` and `env_id` recorded, attempt `gymnasium.make(env_id)` with saved kwargs; warn on failure.
+- ☐ Backward‑safe: unknown keys in file should not crash (warn & skip).
+
+**Acceptance**
+- `Algo.save()` then `Algo.load()` without passing `env` works on standard envs (CartPole, Pendulum).
+- Loading two times yields identical predictions for same observation & deterministic policy seed.
+
+---
+
+## 5) Action Distributions & Spaces
+
+**Actions**
+- ☐ Implement and test distributions:
+  - `CategoricalDistribution` (Discrete)
+  - `DiagGaussianDistribution` (Box continuous)
+  - ☐ `MultiCategoricalDistribution` (MultiDiscrete)
+  - ☐ `BernoulliDistribution` / `MultiBinaryDistribution` (MultiBinary)
+- ☐ Log‑prob, entropy, sample, and mode for each; numerically stable log‑softmax paths.
+- ☐ Enforce action clipping to space bounds for continuous control.
+
+**Acceptance**
+- Unit tests for `log_prob()` against finite‑difference checks; shapes consistent across batch and vectorized envs.
+- MultiDiscrete and MultiBinary policies exercise `predict()` and training without error.
+
+---
+
+## 6) Rollout & Replay Buffers
+
+**Actions**
+- ☐ On‑policy: finalize `RolloutBuffer` with GAE λ, advantage/return computation, normalization toggle.
+- ☐ Off‑policy: implement `ReplayBuffer` (and optionally `PrioritizedReplayBuffer` later).  
+  Fields: obs, next_obs, acts, rews, dones, truncs, timeouts (if used), device placement (MLX).
+- ☐ Efficient sampling: pre‑allocate contiguous arrays; return views without extra copies where possible.
+
+**Acceptance**
+- Buffer push/pop APIs match SB3 semantics; vectorized env support (N envs).
+- Off‑policy algos sample batches at high throughput (≥50k samples/s on M‑series in tests with dummy data).
+
+---
+
+## 7) Algorithms
+
+### 7.1 A2C (On‑policy)
+**Actions**
+- ☐ Reuse PPO rollout path; implement unclipped PG + value + entropy losses; n_epochs=1 by default.
+- ☐ Shared vs separate feature extractors toggle.
+- ☐ GAE and advantage normalization identical to PPO optionality.
+
+**Acceptance**
+- Solves CartPole‑v1 to 200 avg reward ≤ 1e6 steps with default hyperparams.
+
+---
+
+### 7.2 DQN (Off‑policy)
+**Actions**
+- ☐ Policy: Q‑network mapping obs→Q(a); support MLP/CNN.
+- ☐ Epsilon‑greedy exploration schedule; linear decay default.
+- ☐ Target network with periodic or soft updates.
+- ☐ Huber loss; `gradient_steps` and `train_freq` handling.
+
+**Acceptance**
+- Solves CartPole‑v1 (≥195 over 100 eps) within ≤ 1e6 env steps.
+- Save/Load preserves epsilon state and target net parameters.
+
+---
+
+### 7.3 SAC (Off‑policy, continuous)
+**Actions**
+- ☐ Policy: stochastic actor (tanh‑squashed Gaussian), critics Q1/Q2, target critics.
+- ☐ Losses: critic Bellman backup via target V; actor uses reparameterization; α autotune (`target_entropy`), learnable log‑alpha.
+- ☐ Polyak averaging for targets; `ent_coef="auto"` support.
+
+**Acceptance**
+- Reaches standard Pendulum‑v1 baseline performance in smoke test (monotonic learning curve).  
+- Unit tests verify α autotuning convergence (log‑alpha decreases/increases when entropy too low/high).
+
+---
+
+### 7.4 TD3 (Off‑policy, continuous)
+**Actions**
+- ☐ Twin critics + target policy smoothing noise; delayed policy updates; policy noise and noise clip.
+- ☐ Target networks Polyak updates.
+
+**Acceptance**
+- Learning curve improves on Pendulum‑v1 within a smoke‑test budget; critics’ target MSE decreases.
+
+---
+
+## 8) Env & VecEnv Compatibility
+
+**Actions**
+- ☐ `DummyVecEnv` (already used) parity: assert for PPO; allow non‑Vec for off‑policy.
+- ☐ `VecNormalize`: running mean/std for obs and returns (seeded, saveable).  
+- ☐ `make_vec_env` helper for quick creation from env_id and n_envs.
+
+**Acceptance**
+- `VecNormalize` round‑trip save/load preserves normalization stats.
+- PPO asserts on non‑vectorized env; DQN/SAC/TD3 accept single env without complaint.
+
+---
+
+## 9) Callbacks & Logging
+
+**Actions**
+- ☐ Callback API parity: `BaseCallback`, `EvalCallback`, `CheckpointCallback`, `StopTrainingOnRewardThreshold`, etc.
+- ☐ Logging sinks: stdout progress, CSV, and TensorBoard (minimal TB writer).  
+- ☐ Fix episode metrics edge cases (empty buffers); use `safe_mean` helper.
+
+**Acceptance**
+- Callback tests: training stops when callback returns False; checkpoints written on schedule; EvalCallback improves best‑mean reward tracking.
+- No NaN in logs when no episodes have completed yet.
+
+---
+
+## 10) Schedules & Hyperparams
+
+**Actions**
+- ☐ Implement/port schedules: constant, linear, piecewise; expose via string/float/callable like SB3.  
+- ☐ Wire schedules into lr, clip_range, clip_range_vf, ent_coef.
+- ☐ `target_kl` early‑stop fully enforced (counts real epochs run).
+
+**Acceptance**
+- Unit tests validate monotonic lr decay and consistent clip ranges across epochs/minibatches.
+- PPO `_n_updates` increments by actual epochs executed when early‑stopped.
+
+---
+
+## 11) Numerical & Performance Work
+
+**Actions**
+- ☐ Enforce `float32` throughout unless explicitly overridden. Check dtype promotion on losses.
+- ☐ Minimize parameter re‑loads: if possible, compute loss from param dict without mutating live module; only apply params once per step.
+- ☐ Batch collation: prefer contiguous arrays; avoid Python loops on inner dims.
+- ☐ Optional: micro‑benchmark `mx.jit`/compilation opportunities (if/when available) on loss step.
+
+**Acceptance**
+- Micro‑benchmarks: ≥10–20% speedup vs naive baseline on per‑update wall‑time for PPO on M‑series.
+- No inadvertent dtype upcasts; grad norms stable over long runs.
+
+---
+
+## 12) Testing & CI
+
+**Actions**
+- ☐ Unit tests covering:
+  - Distributions math (log_prob/entropy correctness and shapes)
+  - Buffers (push/pop/rollout/GAE correctness)
+  - Algos: one training update smoke test per algo; CartPole learning test (short) for PPO/A2C/DQN; Pendulum smoke for SAC/TD3
+  - Save/Load round‑trip (params and optimizer state)
+  - Reproducibility given seeds
+  - Optimizer state persistence and Adam moments
+- ☐ Integration tests: end‑to‑end `learn()` for 2k–10k steps with callbacks and logging.
+- ☐ GitHub Actions on macOS runner (Apple Silicon if available; otherwise CPU) with MLX wheels cache; matrix: py3.10/3.11.
+
+**Acceptance**
+- `pytest -q` passes locally and in CI; runtime budget ≤ 10–12 min in CI with marks to skip long tests by default.
+- Flaky tests eliminated (rerun ×3 stable).
+
+---
+
+## 13) Documentation & Examples
+
+**Actions**
+- ☐ Update `README.md` with supported algos, install, quickstart, Apple GPU note, and caveats.  
+- ☐ `examples/`:
+  - `train_cartpole_ppo.py`
+  - `train_cartpole_dqn.py`
+  - `train_pendulum_sac.py`
+- ☐ Docstrings on public classes mirror SB3 style (arg names, defaults, semantics).
+
+**Acceptance**
+- Examples run end‑to‑end on macOS (CPU/GPU). README quickstart works as‑is.
+
+---
+
+## 14) Regression: Phase‑4 Bug Fixes (Verify)
+
+**Actions**
+- ☐ Add tests that would have caught the original issues:
+  1. Grad computation object‑vs‑param dict: ensure `mx.value_and_grad` never receives non‑array objects.
+  2. Missing `named_parameters`/state dict: assert parameter discovery includes submodules (including feature extractors).
+  3. Optimizer integration: assert Adam updates modify params and maintain non‑zero moments.
+  4. Episode stats NaN: simulate zero‑episode window; metrics default to 0 without warnings.
+- ☐ Static type checks (mypy/pyright optional) on public signatures.
+
+**Acceptance**
+- All four regression tests pass. No console warnings about empty means.
+
+---
+
+## 15) Implementation Notes (per component)
+
+- **Policy registry**: expose `policy_kwargs` (net_arch, activation_fn, ortho_init flag). Make sure init scales (orthogonal init) are ported or intentionally omitted with note.
+- **SDE**: mark as “not yet supported” (PPO/A2C) and raise clear error if enabled.
+- **Target networks**: use `polyak_update(src_params, tgt_params, tau)` utility; serialize targets.
+- **Exploration**: DQN epsilon schedule object with `epsilon_by_frame(frame_idx)` for agent‑agnostic use.
+- **Seeding**: unify `set_random_seed(seed)` to cover `numpy`, `random`, `mx.random` and envs; test determinism.
+
+---
+
+## 16) Deliverables Checklist
+
+- ☐ `A2C` module + tests + example
+- ☐ `DQN` module + tests + example
+- ☐ `SAC` module + tests + example
+- ☐ `TD3` module + tests + example
+- ☐ Distributions: MultiDiscrete, MultiBinary
+- ☐ ReplayBuffer (and optional Prioritized later)
+- ☐ VecNormalize + save/load
+- ☐ Optimizer adapter with persisted state
+- ☐ Complete save/load (including env_id, optimizer state, targets)
+- ☐ CI workflow (macOS), ≥ 95% unit coverage on core components
+- ☐ README/docs refresh
+
+---
+
+## 17) Minimal Task Breakdown (with Hints)
+
+1) **Optimizer adapter**
+```python
+class OptimizerState(TypedDict):
+    t: int
+    m: dict[str, mx.array]
+    v: dict[str, mx.array]
+
+class AdamAdapter:
+    def __init__(self, lr, betas=(0.9, 0.999), eps=1e-8): ...
+    def init(self, params: dict[str, mx.array]) -> OptimizerState: ...
+    def update(self, params, grads, state) -> tuple[dict[str, mx.array], OptimizerState]: ...
+```
+– Keep shapes in `m/v` identical to params; no aliasing.
+
+2) **Functional loss**
+```python
+def ppo_loss_fn(params, batch, cfg, policy_apply_fn):
+    # policy_apply_fn(params, obs) -> (logits, values, aux)
+    # compute clip loss, value loss, entropy; return scalar loss and any aux stats
+    return loss
+```
+
+3) **ReplayBuffer**
+```python
+class ReplayBuffer:
+    def __init__(self, obs_shape, act_shape, size, dtype=np.float32): ...
+    def add(self, obs, act, rew, next_obs, done, trunc): ...
+    def sample(self, batch_size) -> dict[str, np.ndarray]: ...
+```
+
+4) **Save/Load payload**
+```python
+payload = {
+  "algo": "PPO",
+  "version": __version__,
+  "policy_class": "MlpPolicy",
+  "policy_state": policy.state_dict(),
+  "optimizer_state": opt_state,   # Adam moments, step
+  "spaces": {"obs": space_to_json(obs_space), "act": space_to_json(act_space)},
+  "hyperparams": {...},
+  "env_id": getattr(env, "spec", None) and env.spec.id or None,
+}
+```
+
+---
+
+### Runbook (smoke tests)
+
+- PPO CartPole:
+```
+python examples/train_cartpole_ppo.py --total-timesteps 50000 --seed 0
+```
+Expect mean reward → 200; no NaN metrics.
+
+- DQN CartPole:
+```
+python examples/train_cartpole_dqn.py --total-timesteps 300000 --seed 0
+```
+Expect ≥195 mean over 100 eps by end.
+
+- SAC Pendulum:
+```
+python examples/train_pendulum_sac.py --total-timesteps 200000 --seed 0
+```
+Expect monotonic improvement, entropy decays via α autotune.
+
+---
+
+## 18) Open Questions / Decisions
+
+- Do we adopt gymnasium exclusively (recommended) and map SB3 env_id assumptions accordingly?
+- Keep serialization as a single `.pkl/.npz` or move to zipped directory with JSON + npy for forward‑compat? (Prefer JSON+npz).
+
+---
+
+## 19) Nice‑to‑Haves (Post v0.1.0)
+
+- Prioritized replay for DQN/TD3, HER for goal envs, MP VecEnv, wrappers parity, Atari preproc helpers.
+- Profiling harness (pyinstrument) and perf dashboards.
+- Hyperparam schedules and tuned presets via a minimal “zoo”.
+
+---
+
+**End of spec.**

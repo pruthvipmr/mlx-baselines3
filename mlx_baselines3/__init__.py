@@ -5,16 +5,12 @@ __version__ = "0.1.0"
 # Algorithms - implemented
 from mlx_baselines3.ppo import PPO
 from mlx_baselines3.a2c import A2C
+from mlx_baselines3.dqn import DQN
 
 # Policy aliases - available for implemented algorithms
 from mlx_baselines3.ppo import MlpPolicy, CnnPolicy, MultiInputPolicy
 
 # Algorithms - not yet implemented (placeholder imports for API compatibility)
-
-class DQN:
-    """DQN algorithm - not yet implemented"""
-    def __init__(self, *args, **kwargs):
-        raise NotImplementedError("DQN is not yet implemented in MLX Baselines3")
 
 class SAC:
     """SAC algorithm - not yet implemented"""

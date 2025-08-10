@@ -323,10 +323,15 @@ class FlattenExtractor(BaseFeaturesExtractor):
     
     def __call__(self, observations: MlxArray) -> MlxArray:
         """Flatten observations."""
-        # If observations are already 1D (batch dimension + features), keep as is
+        # If we got a single observation (no batch dim), add one
+        if len(observations.shape) == 1:
+            observations = mx.expand_dims(observations, 0)   # (1, obs_dim)
+            
+        # If observations are already 2D, nothing to do
         if len(observations.shape) == 2:
             return observations
-        # Otherwise flatten everything except batch dimension
+            
+        # Otherwise flatten all but the first (batch) dimension
         return mx.reshape(observations, (observations.shape[0], -1))
 
 

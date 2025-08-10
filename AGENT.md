@@ -60,8 +60,10 @@ mlx-baselines3/
 │   │   ├── __init__.py               # Exports A2C and policy aliases
 │   │   ├── policies.py               # A2C-specific policies (MlpPolicy, CnnPolicy)
 │   │   └── a2c.py                    # A2C algorithm implementation
-│   ├── dqn/                          # DQN algorithm (☐ TODO)
-│   │   └── __init__.py               # Placeholder
+│   ├── dqn/                          # DQN algorithm (✅ IMPLEMENTED)
+│   │   ├── __init__.py               # Exports DQN and policy aliases
+│   │   ├── policies.py               # DQN-specific policies (MlpPolicy, CnnPolicy)
+│   │   └── dqn.py                    # DQN algorithm implementation
 │   ├── sac/                          # SAC algorithm (☐ TODO)
 │   │   └── __init__.py               # Placeholder
 │   └── td3/                          # TD3 algorithm (☐ TODO)
@@ -77,6 +79,7 @@ mlx-baselines3/
 │   ├── test_ppo.py                   # PPO algorithm tests
 │   ├── test_ppo_optimizer_integration.py # PPO + optimizer integration tests
 │   ├── test_a2c.py                   # A2C algorithm tests
+│   ├── test_dqn.py                   # DQN algorithm tests
 │   ├── test_preprocessing.py         # Preprocessing tests
 │   ├── test_save_load_api_parity.py  # Save/load API parity tests (env_id, optimizer state)
 │   ├── test_save_load_roundtrip.py   # Save/load round-trip tests
@@ -102,6 +105,7 @@ mlx-baselines3/
 - **✅ Save/Load API Parity**: env_id persistence, optimizer state, backward compatibility
 - **✅ Action Distributions**: CategoricalDistribution, DiagGaussianDistribution, MultiCategoricalDistribution, BernoulliDistribution with action clipping
 - **✅ Buffer System**: RolloutBuffer and ReplayBuffer with SB3 compatibility, >3.6M samples/s throughput
-- **☐ DQN/SAC/TD3**: Placeholder classes that raise NotImplementedError
+- **✅ DQN**: Fully implemented with Q-networks, epsilon-greedy exploration, target networks, Huber loss
+- **☐ SAC/TD3**: Placeholder classes that raise NotImplementedError
 - **☐ Examples**: No example scripts yet
 - **☐ Advanced Features**: VecNormalize, callbacks need completion

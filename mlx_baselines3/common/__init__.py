@@ -7,6 +7,8 @@ from mlx_baselines3.common.type_aliases import *
 from mlx_baselines3.common import utils
 from mlx_baselines3.common import vec_env
 from mlx_baselines3.common import preprocessing
+from mlx_baselines3.common import optimizers
+from mlx_baselines3.common import schedules
 
 __all__ = [
     "BaseAlgorithm",
@@ -19,4 +21,6 @@ __all__ = [
     "utils",
     "vec_env",
     "preprocessing",
+    "optimizers",
+    "schedules",
 ]

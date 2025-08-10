@@ -301,7 +301,10 @@ class TestPPOEdgeCases:
             "param2": mx.array([1.0, 4.0]),
         }
         
-        clipped_grads = model._clip_gradients(grads, max_norm=1.0)
+        # Test the new gradient clipping function
+        from mlx_baselines3.common.optimizers import clip_grad_norm
+        
+        clipped_grads, original_norm = clip_grad_norm(grads, max_norm=1.0)
         
         # Calculate total norm of clipped gradients
         total_norm = 0.0
@@ -312,6 +315,9 @@ class TestPPOEdgeCases:
         
         # Should be close to 1.0 (or less)
         assert total_norm <= 1.1  # Small tolerance for numerical precision
+        
+        # Original norm should be larger than clipped norm
+        assert original_norm > total_norm
         
         env.close()
 

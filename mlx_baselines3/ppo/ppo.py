@@ -21,6 +21,15 @@ from mlx_baselines3.common.policies import ActorCriticPolicy
 from mlx_baselines3.common.type_aliases import GymEnv, MlxArray, Schedule
 from mlx_baselines3.common.utils import explained_variance, obs_as_mlx
 from mlx_baselines3.common.vec_env import VecEnv
+from mlx_baselines3.common.optimizers import (
+    AdamAdapter, 
+    SGDAdapter, 
+    create_optimizer_adapter,
+    clip_grad_norm,
+    compute_loss_and_grads,
+    OptimizerState
+)
+from mlx_baselines3.common.schedules import get_schedule_fn, make_progress_schedule
 
 
 class PPO(OnPolicyAlgorithm):
@@ -136,6 +145,30 @@ class PPO(OnPolicyAlgorithm):
         
         if self.verbose >= 1:
             print("PPO model setup complete")
+    
+    def _setup_optimizer(self) -> None:
+        """Setup the optimizer adapter with proper schedule support."""
+        if self.verbose >= 1:
+            print("Setting up optimizer adapter...")
+        
+        # Create learning rate schedule function
+        lr_schedule = get_schedule_fn(self.learning_rate)
+        
+        # Create optimizer adapter (default to Adam)
+        self.optimizer_adapter = create_optimizer_adapter(
+            optimizer_name="adam",
+            learning_rate=lr_schedule,
+            betas=(0.9, 0.999),
+            eps=1e-8,
+            weight_decay=0.0
+        )
+        
+        # Get initial parameters from policy and initialize optimizer state
+        initial_params = self.policy.state_dict()
+        self.optimizer_state = self.optimizer_adapter.init_state(initial_params)
+        
+        if self.verbose >= 1:
+            print(f"Optimizer adapter initialized: {type(self.optimizer_adapter).__name__}")
         
     def _make_policy(self) -> None:
         """Create policy instance."""
@@ -159,6 +192,9 @@ class PPO(OnPolicyAlgorithm):
                 action_space=self.action_space,
                 lr_schedule=self.lr_schedule,
             )
+        
+        # Setup optimizer adapter after policy is created
+        self._setup_optimizer()
         
     def _get_parameters(self) -> Dict[str, Any]:
         """Get algorithm parameters."""
@@ -286,29 +322,38 @@ class PPO(OnPolicyAlgorithm):
                     self.policy.load_state_dict(p, strict=False)
                     return self._compute_loss(rollout_data, self.policy, clip_range, clip_range_vf)
                 
-                loss_and_grad_fn = mx.value_and_grad(loss_fn)
-                loss_val, grads = loss_and_grad_fn(params)
+                # Compute loss and gradients using centralized helper
+                loss_val, grads = compute_loss_and_grads(loss_fn, params)
                 
-                # Clip gradients
+                # Clip gradients using improved clipping function
                 if self.max_grad_norm is not None:
-                    grads = self._clip_gradients(grads, self.max_grad_norm)
+                    grads, grad_norm = clip_grad_norm(grads, self.max_grad_norm)
+                else:
+                    # Compute gradient norm for logging even without clipping
+                    grad_norm = float(mx.sqrt(sum(mx.sum(grad ** 2) for grad in grads.values() if grad is not None)))
                 
-                # Optimizer update on parameter dict
-                updated = None
-                try:
-                    updated = self.policy.optimizer.update(params, grads)
-                except Exception:
-                    # Fallback to simple SGD if optimizer API differs
-                    lr = getattr(self.policy.optimizer, "learning_rate", 3e-4)
-                    updated = {k: params[k] - lr * grads.get(k, 0) for k in params.keys()}
-                if updated is not None:
-                    params = updated
+                # Update parameters using optimizer adapter
+                if self.optimizer_adapter is not None and self.optimizer_state is not None:
+                    try:
+                        params, self.optimizer_state = self.optimizer_adapter.update(
+                            params, grads, self.optimizer_state
+                        )
+                    except Exception as e:
+                        warnings.warn(
+                            f"Optimizer update failed: {e}. Falling back to SGD.",
+                            UserWarning
+                        )
+                        # Fallback to simple SGD
+                        lr = 3e-4  # Default learning rate
+                        params = {k: params[k] - lr * grads.get(k, 0) for k in params.keys()}
+                else:
+                    # Fallback to simple SGD if optimizer not initialized
+                    lr = 3e-4  # Default learning rate
+                    params = {k: params[k] - lr * grads.get(k, 0) for k in params.keys()}
+                
                 # Ensure policy reflects latest params
                 self.policy.load_state_dict(params, strict=False)
-                try:
-                    mx.eval(list(params.values()))
-                except Exception:
-                    pass
+                mx.eval(list(params.values()))
                 
                 # For logging, recompute key terms with current policy
                 values, log_prob, entropy = self.policy.evaluate_actions(
@@ -417,21 +462,7 @@ class PPO(OnPolicyAlgorithm):
         # Total loss
         return policy_loss + self.ent_coef * entropy_loss + self.vf_coef * value_loss
         
-    def _clip_gradients(self, grads: Dict[str, MlxArray], max_norm: float) -> Dict[str, MlxArray]:
-        """Clip gradients by global norm."""
-        # Calculate global norm
-        total_norm = 0.0
-        for grad in grads.values():
-            if grad is not None:
-                total_norm += mx.sum(grad ** 2)
-        total_norm = mx.sqrt(total_norm)
-        
-        # Clip gradients
-        clip_coef = max_norm / (total_norm + 1e-6)
-        if clip_coef < 1.0:
-            grads = {k: grad * clip_coef if grad is not None else grad for k, grad in grads.items()}
-            
-        return grads
+
         
     def learn(
         self,

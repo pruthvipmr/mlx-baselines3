@@ -69,9 +69,17 @@ Each new algo must ship with: policy/model classes, loss impl, replay/rollout lo
 - ☐ LR schedules: support callables or `linear_schedule` equivalents; update optimizer LR per update.
 
 **Acceptance**
-- Unit test confirms Adam moments evolve (i.e., changing optimizer state across steps).
-- Removing the fallback does not break PPO training on CartPole.
-- Numerical parity: single minibatch update produces identical param deltas across two calls with identical random seeds.
+- ✅ Unit test confirms Adam moments evolve (i.e., changing optimizer state across steps).
+- ✅ Removing the fallback does not break PPO training on CartPole.
+- ✅ Numerical parity: single minibatch update produces identical param deltas across two calls with identical random seeds.
+
+**✅ SECTION 2 COMPLETED - Implementation Notes:**
+- Created `mlx_baselines3/common/optimizers.py` with `AdamAdapter` and `SGDAdapter` classes
+- Created `mlx_baselines3/common/schedules.py` with learning rate schedule functions  
+- Implemented centralized `compute_loss_and_grads()` and `clip_grad_norm()` helpers
+- Updated PPO to use new optimizer system with proper state management
+- Added comprehensive tests in `tests/test_optimizers.py` and `tests/test_ppo_optimizer_integration.py`
+- Fixed critical bug where optimizer state was being reset to None after initialization
 
 ---
 

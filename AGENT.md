@@ -41,8 +41,10 @@ mlx-baselines3/
 │   │   ├── base_class.py             # BaseAlgorithm, OnPolicy/OffPolicy classes
 │   │   ├── buffers.py                # RolloutBuffer for on-policy algorithms
 │   │   ├── distributions.py          # Action distributions (Categorical, DiagGaussian)
+│   │   ├── optimizers.py             # MLX optimizer adapters (AdamAdapter, SGDAdapter)
 │   │   ├── policies.py               # Base policy classes (ActorCriticPolicy, etc.)
 │   │   ├── preprocessing.py          # Input preprocessing utilities
+│   │   ├── schedules.py              # Learning rate and hyperparameter schedules
 │   │   ├── torch_layers.py           # MLX neural network layers
 │   │   ├── type_aliases.py           # Type definitions for arrays, schedules
 │   │   ├── utils.py                  # General utilities
@@ -66,8 +68,10 @@ mlx-baselines3/
 │   ├── test_buffers.py               # Buffer functionality tests
 │   ├── test_distributions.py         # Distribution math tests
 │   ├── test_imports.py               # Import compatibility tests
+│   ├── test_optimizers.py            # Optimizer adapter tests
 │   ├── test_policies.py              # Policy tests
 │   ├── test_ppo.py                   # PPO algorithm tests
+│   ├── test_ppo_optimizer_integration.py # PPO + optimizer integration tests
 │   ├── test_preprocessing.py         # Preprocessing tests
 │   ├── test_torch_layers.py          # Neural network layer tests
 │   └── test_vec_env.py               # VecEnv tests
@@ -85,7 +89,8 @@ mlx-baselines3/
 ## Implementation Status
 - **✅ PPO**: Fully implemented with MLP/CNN policies, training loop, save/load
 - **✅ Common Infrastructure**: Base classes, buffers, distributions, policies, VecEnv
+- **✅ Optimizer System**: AdamAdapter, SGDAdapter, gradient clipping, LR schedules
 - **☐ A2C/DQN/SAC/TD3**: Placeholder classes that raise NotImplementedError
 - **☐ ReplayBuffer**: Needed for off-policy algorithms (DQN/SAC/TD3)
 - **☐ Examples**: No example scripts yet
-- **☐ Advanced Features**: VecNormalize, callbacks, schedules need completion
+- **☐ Advanced Features**: VecNormalize, callbacks need completion

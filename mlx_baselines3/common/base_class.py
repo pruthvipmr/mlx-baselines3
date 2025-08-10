@@ -196,6 +196,14 @@ class BaseAlgorithm(ABC):
         # Create directory if it doesn't exist
         os.makedirs(os.path.dirname(path), exist_ok=True)
         
+        # Extract env_id if available
+        env_id = None
+        if hasattr(self.env, "spec") and self.env.spec is not None:
+            env_id = self.env.spec.id
+        elif hasattr(self.env, "envs") and len(self.env.envs) > 0 and hasattr(self.env.envs[0], "spec"):
+            # For vectorized environments, get from first env
+            env_id = self.env.envs[0].spec.id if self.env.envs[0].spec is not None else None
+        
         # Prepare data to save
         data = {
             "policy": self.policy,
@@ -211,7 +219,12 @@ class BaseAlgorithm(ABC):
             "_total_timesteps": self._total_timesteps,
             "_episode_num": self._episode_num,
             "_current_progress_remaining": self._current_progress_remaining,
+            "env_id": env_id,
         }
+        
+        # Add optimizer state if available
+        if hasattr(self, "optimizer_state") and self.optimizer_state is not None:
+            data["optimizer_state"] = self.optimizer_state
         
         # Add algorithm-specific data
         algorithm_data = self._get_save_data()
@@ -250,6 +263,8 @@ class BaseAlgorithm(ABC):
         Returns:
             Loaded model instance
         """
+        import warnings
+        
         # Load data
         with open(path, "rb") as f:
             data = cloudpickle.load(f)
@@ -262,7 +277,24 @@ class BaseAlgorithm(ABC):
         # Create model instance
         if env is None:
             # Try to recreate environment from saved data
-            env = gym.make(data.get("env_id", "CartPole-v1"))
+            env_id = data.get("env_id")
+            if env_id is not None:
+                try:
+                    from .vec_env import DummyVecEnv
+                    base_env = gym.make(env_id)
+                    env = DummyVecEnv([lambda: base_env])
+                    if print_system_info or kwargs.get("verbose", 0) >= 1:
+                        print(f"Recreated environment from saved env_id: {env_id}")
+                except Exception as e:
+                    warnings.warn(f"Failed to recreate environment '{env_id}': {e}. Using CartPole-v1 as fallback.", UserWarning)
+                    from .vec_env import DummyVecEnv
+                    base_env = gym.make("CartPole-v1")
+                    env = DummyVecEnv([lambda: base_env])
+            else:
+                warnings.warn("No env_id found in saved model. Using CartPole-v1 as fallback.", UserWarning)
+                from .vec_env import DummyVecEnv
+                base_env = gym.make("CartPole-v1")
+                env = DummyVecEnv([lambda: base_env])
             
         # Extract constructor arguments
         model_kwargs = {}
@@ -279,14 +311,53 @@ class BaseAlgorithm(ABC):
             **model_kwargs,
         )
         
-        # Restore training state
-        model.num_timesteps = data.get("num_timesteps", 0)
-        model._total_timesteps = data.get("_total_timesteps", 0)
-        model._episode_num = data.get("_episode_num", 0)
-        model._current_progress_remaining = data.get("_current_progress_remaining", 1.0)
+        # Restore training state (backward compatible)
+        known_state_keys = {
+            "num_timesteps", "_total_timesteps", "_episode_num", "_current_progress_remaining"
+        }
+        for key in known_state_keys:
+            if key in data:
+                setattr(model, key, data[key])
+            elif key == "num_timesteps":
+                setattr(model, key, 0)
+            elif key == "_total_timesteps":
+                setattr(model, key, 0)
+            elif key == "_episode_num":
+                setattr(model, key, 0)
+            elif key == "_current_progress_remaining":
+                setattr(model, key, 1.0)
         
-        # Load algorithm-specific data
-        model._load_save_data(data)
+        # Restore optimizer state if available
+        if "optimizer_state" in data and hasattr(model, "optimizer_state"):
+            model.optimizer_state = data["optimizer_state"]
+            if print_system_info or kwargs.get("verbose", 0) >= 1:
+                print("Restored optimizer state from saved model")
+        
+        # Load algorithm-specific data (with backward compatibility)
+        try:
+            model._load_save_data(data)
+        except Exception as e:
+            warnings.warn(f"Failed to load some algorithm-specific data: {e}. Model may not be fully restored.", UserWarning)
+        
+        # Warn about unknown keys for forward compatibility
+        expected_keys = {
+            "policy", "observation_space", "action_space", "n_envs", "num_timesteps",
+            "seed", "learning_rate", "lr_schedule", "device", "verbose",
+            "_total_timesteps", "_episode_num", "_current_progress_remaining",
+            "env_id", "optimizer_state"
+        }
+        
+        # Get algorithm-specific keys by calling _get_save_data() on a temporary instance
+        try:
+            temp_data = model._get_save_data()
+            expected_keys.update(temp_data.keys())
+        except:
+            pass  # Ignore if we can't get algorithm-specific keys
+        
+        unknown_keys = set(data.keys()) - expected_keys
+        if unknown_keys:
+            warnings.warn(f"Unknown keys in saved model (skipping): {unknown_keys}. "
+                         "This may indicate the model was saved with a newer version.", UserWarning)
         
         if force_reset and hasattr(env, "reset"):
             env.reset()

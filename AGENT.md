@@ -74,6 +74,7 @@ mlx-baselines3/
 │   ├── test_ppo.py                   # PPO algorithm tests
 │   ├── test_ppo_optimizer_integration.py # PPO + optimizer integration tests
 │   ├── test_preprocessing.py         # Preprocessing tests
+│   ├── test_save_load_api_parity.py  # Save/load API parity tests (env_id, optimizer state)
 │   ├── test_save_load_roundtrip.py   # Save/load round-trip tests
 │   ├── test_torch_layers.py          # Neural network layer tests
 │   └── test_vec_env.py               # VecEnv tests
@@ -93,6 +94,7 @@ mlx-baselines3/
 - **✅ Common Infrastructure**: Base classes, buffers, distributions, policies, VecEnv
 - **✅ Optimizer System**: AdamAdapter, SGDAdapter, gradient clipping, LR schedules
 - **✅ Parameter Registry**: Complete state_dict/load_state_dict system with validation
+- **✅ Save/Load API Parity**: env_id persistence, optimizer state, backward compatibility
 - **☐ A2C/DQN/SAC/TD3**: Placeholder classes that raise NotImplementedError
 - **☐ ReplayBuffer**: Needed for off-policy algorithms (DQN/SAC/TD3)
 - **☐ Examples**: No example scripts yet

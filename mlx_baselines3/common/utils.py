@@ -241,20 +241,22 @@ def clip_grad_norm(grads: Dict[str, mx.array], max_norm: float) -> float:
     return total_norm
 
 
-def obs_as_mlx(obs: Union[np.ndarray, Dict[str, np.ndarray]]) -> Union[mx.array, Dict[str, mx.array]]:
+def obs_as_mlx(obs: Union[np.ndarray, mx.array, Dict[str, np.ndarray]]) -> Union[mx.array, Dict[str, mx.array]]:
     """
     Convert observation(s) to MLX arrays.
     
     Args:
-        obs: Observation as numpy array or dict of numpy arrays
+        obs: Observation as numpy array, MLX array, or dict of numpy arrays
         
     Returns:
         Observation as MLX array or dict of MLX arrays
     """
-    if isinstance(obs, np.ndarray):
+    if isinstance(obs, mx.array):
+        return obs  # Already an MLX array
+    elif isinstance(obs, np.ndarray):
         return mx.array(obs)
     elif isinstance(obs, dict):
-        return {key: mx.array(val) for key, val in obs.items()}
+        return {key: mx.array(val) if isinstance(val, np.ndarray) else val for key, val in obs.items()}
     else:
         raise ValueError(f"Unsupported observation type: {type(obs)}")
 

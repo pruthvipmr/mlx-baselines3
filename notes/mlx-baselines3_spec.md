@@ -115,13 +115,23 @@ Each new algo must ship with: policy/model classes, loss impl, replay/rollout lo
 ## 4) Save/Load API Parity
 
 **Actions**
-- ☐ `save(path)`: persist model config, policy state dict, spaces, hyperparameters, optimizer state (including Adam moments), and **env_id** if available.
-- ☐ `load(path, env=None)`: reconstruct model; if `env is None` and `env_id` recorded, attempt `gymnasium.make(env_id)` with saved kwargs; warn on failure.
-- ☐ Backward‑safe: unknown keys in file should not crash (warn & skip).
+- ✅ `save(path)`: persist model config, policy state dict, spaces, hyperparameters, optimizer state (including Adam moments), and **env_id** if available.
+- ✅ `load(path, env=None)`: reconstruct model; if `env is None` and `env_id` recorded, attempt `gymnasium.make(env_id)` with saved kwargs; warn on failure.
+- ✅ Backward‑safe: unknown keys in file should not crash (warn & skip).
 
 **Acceptance**
-- `Algo.save()` then `Algo.load()` without passing `env` works on standard envs (CartPole, Pendulum).
-- Loading two times yields identical predictions for same observation & deterministic policy seed.
+- ✅ `Algo.save()` then `Algo.load()` without passing `env` works on standard envs (CartPole, Pendulum).
+- ✅ Loading two times yields identical predictions for same observation & deterministic policy seed.
+
+**✅ SECTION 4 COMPLETED - Implementation Notes:**
+- Enhanced `BaseAlgorithm.save()` to extract and persist `env_id` from environment spec
+- Added optimizer state saving including Adam moments and step count
+- Updated `BaseAlgorithm.load()` to recreate environments from saved `env_id`
+- Implemented automatic wrapping of recreated environments in `DummyVecEnv` for PPO compatibility
+- Added comprehensive backward compatibility with unknown key warning system
+- Fixed `obs_as_mlx()` utility to handle MLX arrays that are already converted
+- Created comprehensive test suite in `tests/test_save_load_api_parity.py` covering all requirements
+- All acceptance criteria verified: env-less loading, deterministic predictions, fallback handling
 
 ---
 

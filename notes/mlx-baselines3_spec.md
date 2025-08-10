@@ -138,17 +138,38 @@ Each new algo must ship with: policy/model classes, loss impl, replay/rollout lo
 ## 5) Action Distributions & Spaces
 
 **Actions**
-- ☐ Implement and test distributions:
-  - `CategoricalDistribution` (Discrete)
-  - `DiagGaussianDistribution` (Box continuous)
-  - ☐ `MultiCategoricalDistribution` (MultiDiscrete)
-  - ☐ `BernoulliDistribution` / `MultiBinaryDistribution` (MultiBinary)
-- ☐ Log‑prob, entropy, sample, and mode for each; numerically stable log‑softmax paths.
-- ☐ Enforce action clipping to space bounds for continuous control.
+- ✅ Implement and test distributions:
+  - ✅ `CategoricalDistribution` (Discrete)
+  - ✅ `DiagGaussianDistribution` (Box continuous)
+  - ✅ `MultiCategoricalDistribution` (MultiDiscrete)
+  - ✅ `BernoulliDistribution` / `MultiBinaryDistribution` (MultiBinary)
+- ✅ Log‑prob, entropy, sample, and mode for each; numerically stable log‑softmax paths.
+- ✅ Enforce action clipping to space bounds for continuous control.
 
 **Acceptance**
-- Unit tests for `log_prob()` against finite‑difference checks; shapes consistent across batch and vectorized envs.
-- MultiDiscrete and MultiBinary policies exercise `predict()` and training without error.
+- ✅ Unit tests for `log_prob()` against finite‑difference checks; shapes consistent across batch and vectorized envs.
+- ✅ MultiDiscrete and MultiBinary policies exercise `predict()` and training without error.
+
+**✅ SECTION 5 COMPLETED - Implementation Notes:**
+- Implemented `MultiCategoricalDistribution` for MultiDiscrete action spaces
+  - Handles multiple categorical distributions with different number of actions per component
+  - Properly splits concatenated logits into separate action components
+  - Sampling uses Gumbel-max trick for each component independently
+  - Log probability and entropy computed by summing across all components
+- Implemented `BernoulliDistribution` for MultiBinary action spaces  
+  - Uses sigmoid activation and numerically stable log_sigmoid for computations
+  - Added `MultiBinaryDistribution` as alias for compatibility
+  - Proper binary action sampling using uniform random comparison
+- Added action clipping to continuous distributions (DiagGaussianDistribution)
+  - Clips actions to action space bounds in both `sample()` and `mode()` methods
+  - Automatically converts numpy bounds to MLX arrays for clipping
+- Updated `make_proba_distribution()` to support new action spaces
+  - MultiDiscrete → MultiCategoricalDistribution
+  - MultiBinary → BernoulliDistribution  
+  - Box → DiagGaussianDistribution (with action space stored for clipping)
+- All distributions use numerically stable implementations (log_softmax, log_sigmoid)
+- Comprehensive test suite with 52 tests covering all distributions, finite difference checks, action clipping, and edge cases
+- Full SB3 API compatibility maintained with convenience methods and error handling
 
 ---
 

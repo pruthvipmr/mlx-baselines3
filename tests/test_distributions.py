@@ -12,6 +12,9 @@ from mlx_baselines3.common.distributions import (
     CategoricalDistribution,
     DiagGaussianDistribution,
     SquashedDiagGaussianDistribution,
+    MultiCategoricalDistribution,
+    BernoulliDistribution,
+    MultiBinaryDistribution,
     make_proba_distribution,
 )
 
@@ -345,6 +348,328 @@ class TestSquashedDiagGaussianDistribution:
         assert not mx.allclose(log_prob_squashed, log_prob_unsquashed, atol=1e-3)
 
 
+class TestMultiCategoricalDistribution:
+    """Test MultiCategoricalDistribution for multi-discrete actions."""
+    
+    def test_initialization(self):
+        """Test multi-categorical distribution initialization."""
+        nvec = [3, 2, 4]
+        dist = MultiCategoricalDistribution(nvec)
+        
+        assert dist.nvec == nvec
+        assert dist.action_dims == 3
+        assert dist.total_action_dim == 9  # 3 + 2 + 4
+        assert dist.logits is None
+        assert dist.split_logits is None
+    
+    def test_proba_distribution(self):
+        """Test probability distribution setup."""
+        nvec = [3, 2]
+        dist = MultiCategoricalDistribution(nvec)
+        logits = mx.array([[1.0, 2.0, 0.5, -1.0, 0.0]])  # 3 + 2 = 5 logits
+        
+        dist.proba_distribution(logits)
+        
+        assert dist.logits is not None
+        assert dist.split_logits is not None
+        assert len(dist.split_logits) == 2
+        assert dist.split_logits[0].shape == (1, 3)  # First component: 3 actions
+        assert dist.split_logits[1].shape == (1, 2)  # Second component: 2 actions
+    
+    def test_mode(self):
+        """Test mode (most likely action)."""
+        nvec = [3, 2]
+        dist = MultiCategoricalDistribution(nvec)
+        # First component: max at index 1, second component: max at index 0
+        logits = mx.array([[1.0, 3.0, 0.5, 2.0, 1.0]])
+        
+        dist.proba_distribution(logits)
+        mode = dist.mode()
+        
+        expected = mx.array([[1, 0]])  # [max_index_component1, max_index_component2]
+        assert mx.array_equal(mode, expected)
+    
+    def test_sample_deterministic(self):
+        """Test deterministic sampling (should return mode)."""
+        nvec = [3, 2]
+        dist = MultiCategoricalDistribution(nvec)
+        logits = mx.array([[1.0, 3.0, 0.5, 2.0, 1.0]])
+        
+        dist.proba_distribution(logits)
+        action = dist.sample(deterministic=True)
+        mode = dist.mode()
+        
+        assert mx.array_equal(action, mode)
+    
+    def test_sample_stochastic(self):
+        """Test stochastic sampling."""
+        nvec = [3, 2]
+        dist = MultiCategoricalDistribution(nvec)
+        logits = mx.array([[1.0, 3.0, 0.5, 2.0, 1.0]])
+        
+        dist.proba_distribution(logits)
+        action = dist.sample(deterministic=False)
+        
+        assert action.shape == (1, 2)
+        assert 0 <= action[0, 0] < 3  # First component
+        assert 0 <= action[0, 1] < 2  # Second component
+    
+    def test_log_prob(self):
+        """Test log probability computation."""
+        nvec = [3, 2]
+        dist = MultiCategoricalDistribution(nvec)
+        logits = mx.array([[1.0, 2.0, 0.5, -1.0, 0.0]])
+        actions = mx.array([[1, 0]])  # Action 1 for first component, action 0 for second
+        
+        dist.proba_distribution(logits)
+        log_prob = dist.log_prob(actions)
+        
+        assert log_prob.shape == (1,)
+        
+        # Verify that the log probability is reasonable
+        assert not mx.isnan(log_prob).any()
+        assert not mx.isinf(log_prob).any()
+    
+    def test_entropy(self):
+        """Test entropy computation."""
+        nvec = [3, 2]
+        dist = MultiCategoricalDistribution(nvec)
+        
+        # Uniform distribution should have higher entropy
+        logits_uniform = mx.array([[0.0, 0.0, 0.0, 0.0, 0.0]])
+        dist.proba_distribution(logits_uniform)
+        entropy_uniform = dist.entropy()
+        
+        # Peaked distribution should have lower entropy
+        logits_peaked = mx.array([[10.0, 0.0, 0.0, 10.0, 0.0]])
+        dist.proba_distribution(logits_peaked)
+        entropy_peaked = dist.entropy()
+        
+        assert entropy_uniform[0] > entropy_peaked[0]
+    
+    def test_convenience_methods(self):
+        """Test convenience methods."""
+        nvec = [3, 2]
+        dist = MultiCategoricalDistribution(nvec)
+        logits = mx.array([[1.0, 2.0, 0.5, -1.0, 0.0]])
+        actions = mx.array([[1, 0]])
+        
+        # Test actions_from_params
+        sampled_actions = dist.actions_from_params(logits, deterministic=True)
+        assert sampled_actions.shape == (1, 2)
+        
+        # Test log_prob_from_params
+        log_prob = dist.log_prob_from_params(logits, actions)
+        assert log_prob.shape == (1,)
+    
+    def test_error_without_proba_distribution(self):
+        """Test that methods raise error without calling proba_distribution first."""
+        nvec = [3, 2]
+        dist = MultiCategoricalDistribution(nvec)
+        
+        with pytest.raises(ValueError, match="Must call proba_distribution"):
+            dist.sample()
+        
+        with pytest.raises(ValueError, match="Must call proba_distribution"):
+            dist.log_prob(mx.array([[1, 0]]))
+        
+        with pytest.raises(ValueError, match="Must call proba_distribution"):
+            dist.entropy()
+        
+        with pytest.raises(ValueError, match="Must call proba_distribution"):
+            dist.mode()
+
+
+class TestBernoulliDistribution:
+    """Test BernoulliDistribution for multi-binary actions."""
+    
+    def test_initialization(self):
+        """Test Bernoulli distribution initialization."""
+        dist = BernoulliDistribution(action_dim=3)
+        
+        assert dist.action_dim == 3
+        assert dist.logits is None
+        assert dist.probs is None
+    
+    def test_proba_distribution(self):
+        """Test probability distribution setup."""
+        dist = BernoulliDistribution(action_dim=3)
+        logits = mx.array([[1.0, -0.5, 2.0], [0.0, 1.0, -1.0]])
+        
+        dist.proba_distribution(logits)
+        
+        assert dist.logits is not None
+        assert dist.probs is not None
+        assert dist.logits.shape == (2, 3)
+        assert dist.probs.shape == (2, 3)
+        
+        # Check probabilities are in [0, 1]
+        assert mx.all(dist.probs >= 0.0)
+        assert mx.all(dist.probs <= 1.0)
+    
+    def test_mode(self):
+        """Test mode (most likely action)."""
+        dist = BernoulliDistribution(action_dim=3)
+        logits = mx.array([[1.0, -0.5, 2.0]])  # p ≈ [0.73, 0.38, 0.88]
+        
+        dist.proba_distribution(logits)
+        mode = dist.mode()
+        
+        expected = mx.array([[1.0, 0.0, 1.0]])  # p > 0.5 -> 1, p < 0.5 -> 0
+        assert mx.array_equal(mode, expected)
+    
+    def test_sample_deterministic(self):
+        """Test deterministic sampling (should return mode)."""
+        dist = BernoulliDistribution(action_dim=3)
+        logits = mx.array([[1.0, -0.5, 2.0]])
+        
+        dist.proba_distribution(logits)
+        action = dist.sample(deterministic=True)
+        mode = dist.mode()
+        
+        assert mx.array_equal(action, mode)
+    
+    def test_sample_stochastic(self):
+        """Test stochastic sampling."""
+        dist = BernoulliDistribution(action_dim=3)
+        logits = mx.array([[1.0, -0.5, 2.0]])
+        
+        dist.proba_distribution(logits)
+        action = dist.sample(deterministic=False)
+        
+        assert action.shape == (1, 3)
+        # All values should be 0 or 1
+        assert mx.all((action == 0.0) | (action == 1.0))
+    
+    def test_log_prob(self):
+        """Test log probability computation."""
+        dist = BernoulliDistribution(action_dim=3)
+        logits = mx.array([[1.0, -0.5, 2.0]])
+        actions = mx.array([[1.0, 0.0, 1.0]])
+        
+        dist.proba_distribution(logits)
+        log_prob = dist.log_prob(actions)
+        
+        assert log_prob.shape == (1,)
+        
+        # Verify that the log probability is reasonable
+        assert not mx.isnan(log_prob).any()
+        assert not mx.isinf(log_prob).any()
+        assert log_prob[0] <= 0.0  # Log probability should be negative
+    
+    def test_entropy(self):
+        """Test entropy computation."""
+        dist = BernoulliDistribution(action_dim=3)
+        
+        # Uniform distribution (p=0.5) should have maximum entropy
+        logits_uniform = mx.array([[0.0, 0.0, 0.0]])  # sigmoid(0) = 0.5
+        dist.proba_distribution(logits_uniform)
+        entropy_uniform = dist.entropy()
+        
+        # Peaked distribution should have lower entropy
+        logits_peaked = mx.array([[10.0, -10.0, 10.0]])  # Very close to 1, 0, 1
+        dist.proba_distribution(logits_peaked)
+        entropy_peaked = dist.entropy()
+        
+        assert entropy_uniform[0] > entropy_peaked[0]
+    
+    def test_convenience_methods(self):
+        """Test convenience methods."""
+        dist = BernoulliDistribution(action_dim=3)
+        logits = mx.array([[1.0, -0.5, 2.0]])
+        actions = mx.array([[1.0, 0.0, 1.0]])
+        
+        # Test actions_from_params
+        sampled_actions = dist.actions_from_params(logits, deterministic=True)
+        assert sampled_actions.shape == (1, 3)
+        
+        # Test log_prob_from_params
+        log_prob = dist.log_prob_from_params(logits, actions)
+        assert log_prob.shape == (1,)
+    
+    def test_error_without_proba_distribution(self):
+        """Test that methods raise error without calling proba_distribution first."""
+        dist = BernoulliDistribution(action_dim=3)
+        
+        with pytest.raises(ValueError, match="Must call proba_distribution"):
+            dist.sample()
+        
+        with pytest.raises(ValueError, match="Must call proba_distribution"):
+            dist.log_prob(mx.array([[1.0, 0.0, 1.0]]))
+        
+        with pytest.raises(ValueError, match="Must call proba_distribution"):
+            dist.entropy()
+        
+        with pytest.raises(ValueError, match="Must call proba_distribution"):
+            dist.mode()
+    
+    def test_multibinary_alias(self):
+        """Test that MultiBinaryDistribution is an alias for BernoulliDistribution."""
+        assert MultiBinaryDistribution is BernoulliDistribution
+        
+        dist = MultiBinaryDistribution(action_dim=3)
+        assert isinstance(dist, BernoulliDistribution)
+
+
+class TestActionClipping:
+    """Test action clipping for continuous distributions."""
+    
+    def test_action_clipping_continuous(self):
+        """Test that continuous actions are clipped to action space bounds."""
+        action_space = gym.spaces.Box(low=-2.0, high=3.0, shape=(2,))
+        dist = make_proba_distribution(action_space)
+        
+        # Set large mean values that would go outside bounds
+        mean = mx.array([[10.0, -10.0]])  # Way outside bounds
+        log_std = mx.array([0.0, 0.0])  # Low noise
+        
+        dist.proba_distribution(mean, log_std)
+        actions = dist.sample(deterministic=True)  # Should return clipped mean
+        
+        # Actions should be clipped to bounds
+        assert mx.all(actions >= action_space.low)
+        assert mx.all(actions <= action_space.high)
+
+
+class TestFiniteDifferenceLogProb:
+    """Test log probability computation using finite differences."""
+    
+    def test_categorical_finite_diff(self):
+        """Test categorical log prob against finite difference approximation."""
+        dist = CategoricalDistribution(action_dim=3)
+        logits = mx.array([[1.0, 2.0, 0.5]])
+        actions = mx.array([1])
+        
+        dist.proba_distribution(logits)
+        log_prob = dist.log_prob(actions)
+        
+        # Finite difference approximation
+        probs = mx.softmax(logits, axis=-1)
+        expected_log_prob = mx.log(probs[0, actions[0]])
+        
+        assert mx.allclose(log_prob[0], expected_log_prob, atol=1e-6)
+    
+    def test_gaussian_finite_diff(self):
+        """Test Gaussian log prob against analytical computation."""
+        dist = DiagGaussianDistribution(action_dim=2)
+        mean = mx.array([[1.0, -0.5]])
+        log_std = mx.array([0.0, 0.0])  # std = 1.0
+        actions = mx.array([[1.5, -0.5]])
+        
+        dist.proba_distribution(mean, log_std)
+        log_prob = dist.log_prob(actions)
+        
+        # Analytical computation
+        diff = actions - mean
+        std = mx.exp(log_std)
+        expected_log_prob = -0.5 * mx.sum(
+            (diff / std) ** 2 + 2 * log_std + math.log(2 * math.pi), 
+            axis=-1
+        )
+        
+        assert mx.allclose(log_prob, expected_log_prob, atol=1e-6)
+
+
 class TestMakeProbaDistribution:
     """Test make_proba_distribution factory function."""
     
@@ -363,10 +688,37 @@ class TestMakeProbaDistribution:
         
         assert isinstance(dist, DiagGaussianDistribution)
         assert dist.action_dim == 3
+        assert dist.action_space is action_space  # Should store action space for clipping
+    
+    def test_multi_discrete_action_space(self):
+        """Test creating distribution for multi-discrete action space."""
+        action_space = gym.spaces.MultiDiscrete([3, 2, 4])
+        dist = make_proba_distribution(action_space)
+        
+        assert isinstance(dist, MultiCategoricalDistribution)
+        assert dist.nvec == [3, 2, 4]
+        assert dist.total_action_dim == 9
+    
+    def test_multi_binary_action_space(self):
+        """Test creating distribution for multi-binary action space."""
+        action_space = gym.spaces.MultiBinary(5)
+        dist = make_proba_distribution(action_space)
+        
+        assert isinstance(dist, BernoulliDistribution)
+        assert dist.action_dim == 5
+    
+    def test_sde_not_supported(self):
+        """Test that SDE raises NotImplementedError."""
+        action_space = gym.spaces.Discrete(5)
+        
+        with pytest.raises(NotImplementedError, match="State Dependent Exploration"):
+            make_proba_distribution(action_space, use_sde=True)
     
     def test_unsupported_action_space(self):
         """Test error for unsupported action space."""
-        action_space = gym.spaces.MultiBinary(3)
+        # Create a custom unsupported action space
+        import gymnasium as gym
+        action_space = gym.spaces.Tuple([gym.spaces.Discrete(2), gym.spaces.Box(-1, 1, (1,))])
         
         with pytest.raises(NotImplementedError):
             make_proba_distribution(action_space)

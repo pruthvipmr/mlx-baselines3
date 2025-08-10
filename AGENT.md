@@ -95,6 +95,7 @@ mlx-baselines3/
 - **✅ Optimizer System**: AdamAdapter, SGDAdapter, gradient clipping, LR schedules
 - **✅ Parameter Registry**: Complete state_dict/load_state_dict system with validation
 - **✅ Save/Load API Parity**: env_id persistence, optimizer state, backward compatibility
+- **✅ Action Distributions**: CategoricalDistribution, DiagGaussianDistribution, MultiCategoricalDistribution, BernoulliDistribution with action clipping
 - **☐ A2C/DQN/SAC/TD3**: Placeholder classes that raise NotImplementedError
 - **☐ ReplayBuffer**: Needed for off-policy algorithms (DQN/SAC/TD3)
 - **☐ Examples**: No example scripts yet

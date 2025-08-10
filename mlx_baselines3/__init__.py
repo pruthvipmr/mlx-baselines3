@@ -6,16 +6,12 @@ __version__ = "0.1.0"
 from mlx_baselines3.ppo import PPO
 from mlx_baselines3.a2c import A2C
 from mlx_baselines3.dqn import DQN
+from mlx_baselines3.sac import SAC
 
 # Policy aliases - available for implemented algorithms
 from mlx_baselines3.ppo import MlpPolicy, CnnPolicy, MultiInputPolicy
 
 # Algorithms - not yet implemented (placeholder imports for API compatibility)
-
-class SAC:
-    """SAC algorithm - not yet implemented"""
-    def __init__(self, *args, **kwargs):
-        raise NotImplementedError("SAC is not yet implemented in MLX Baselines3")
 
 class TD3:
     """TD3 algorithm - not yet implemented"""

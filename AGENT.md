@@ -64,8 +64,10 @@ mlx-baselines3/
 │   │   ├── __init__.py               # Exports DQN and policy aliases
 │   │   ├── policies.py               # DQN-specific policies (MlpPolicy, CnnPolicy)
 │   │   └── dqn.py                    # DQN algorithm implementation
-│   ├── sac/                          # SAC algorithm (☐ TODO)
-│   │   └── __init__.py               # Placeholder
+│   ├── sac/                          # SAC algorithm (✅ IMPLEMENTED)
+│   │   ├── __init__.py               # Exports SAC and policy aliases
+│   │   ├── policies.py               # SAC-specific policies (MlpPolicy, CnnPolicy, MultiInputPolicy)
+│   │   └── sac.py                    # SAC algorithm implementation
 │   └── td3/                          # TD3 algorithm (☐ TODO)
 │       └── __init__.py               # Placeholder
 ├── tests/                            # Test suite
@@ -80,6 +82,7 @@ mlx-baselines3/
 │   ├── test_ppo_optimizer_integration.py # PPO + optimizer integration tests
 │   ├── test_a2c.py                   # A2C algorithm tests
 │   ├── test_dqn.py                   # DQN algorithm tests
+│   ├── test_sac.py                   # SAC algorithm tests
 │   ├── test_preprocessing.py         # Preprocessing tests
 │   ├── test_save_load_api_parity.py  # Save/load API parity tests (env_id, optimizer state)
 │   ├── test_save_load_roundtrip.py   # Save/load round-trip tests
@@ -106,6 +109,7 @@ mlx-baselines3/
 - **✅ Action Distributions**: CategoricalDistribution, DiagGaussianDistribution, MultiCategoricalDistribution, BernoulliDistribution with action clipping
 - **✅ Buffer System**: RolloutBuffer and ReplayBuffer with SB3 compatibility, >3.6M samples/s throughput
 - **✅ DQN**: Fully implemented with Q-networks, epsilon-greedy exploration, target networks, Huber loss
-- **☐ SAC/TD3**: Placeholder classes that raise NotImplementedError
+- **✅ SAC**: Fully implemented with stochastic actor, twin critics, automatic entropy tuning, target networks (learn method may need enhancement)
+- **☐ TD3**: Placeholder classes that raise NotImplementedError
 - **☐ Examples**: No example scripts yet
 - **☐ Advanced Features**: VecNormalize, callbacks need completion

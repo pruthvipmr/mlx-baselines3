@@ -69,10 +69,12 @@ mlx-baselines3/
 │   ├── test_distributions.py         # Distribution math tests
 │   ├── test_imports.py               # Import compatibility tests
 │   ├── test_optimizers.py            # Optimizer adapter tests
+│   ├── test_parameter_registry.py    # Parameter registry and state_dict tests
 │   ├── test_policies.py              # Policy tests
 │   ├── test_ppo.py                   # PPO algorithm tests
 │   ├── test_ppo_optimizer_integration.py # PPO + optimizer integration tests
 │   ├── test_preprocessing.py         # Preprocessing tests
+│   ├── test_save_load_roundtrip.py   # Save/load round-trip tests
 │   ├── test_torch_layers.py          # Neural network layer tests
 │   └── test_vec_env.py               # VecEnv tests
 ├── examples/                         # Usage examples (empty - TODO)
@@ -90,6 +92,7 @@ mlx-baselines3/
 - **✅ PPO**: Fully implemented with MLP/CNN policies, training loop, save/load
 - **✅ Common Infrastructure**: Base classes, buffers, distributions, policies, VecEnv
 - **✅ Optimizer System**: AdamAdapter, SGDAdapter, gradient clipping, LR schedules
+- **✅ Parameter Registry**: Complete state_dict/load_state_dict system with validation
 - **☐ A2C/DQN/SAC/TD3**: Placeholder classes that raise NotImplementedError
 - **☐ ReplayBuffer**: Needed for off-policy algorithms (DQN/SAC/TD3)
 - **☐ Examples**: No example scripts yet

@@ -30,7 +30,7 @@ from mlx_baselines3.common.type_aliases import MlxArray, Schedule
 from mlx_baselines3.common.utils import get_device
 
 
-class BasePolicy(ABC):
+class BasePolicy(MlxModule):
     """
     The base policy object: makes predictions, holds state.
     
@@ -58,6 +58,8 @@ class BasePolicy(ABC):
         optimizer_class: Type[optim.Optimizer] = optim.Adam,
         optimizer_kwargs: Optional[Dict[str, Any]] = None,
     ):
+        super().__init__()  # Initialize MlxModule
+        
         if optimizer_kwargs is None:
             optimizer_kwargs = {}
             
@@ -74,6 +76,8 @@ class BasePolicy(ABC):
         self.features_extractor_class = features_extractor_class
         self.features_extractor_kwargs = features_extractor_kwargs
         self.features_extractor = features_extractor_class(observation_space, **features_extractor_kwargs)
+        # Register as a module for parameter discovery
+        self.add_module("features_extractor", self.features_extractor)
         
         # Optimizer settings
         self.optimizer_class = optimizer_class
@@ -219,96 +223,21 @@ class BasePolicy(ABC):
         values = self.predict_values(obs)
         entropy = distribution.entropy()
         return values, log_prob, entropy
-
-    # ----- Parameter management (for save/load and optimization) -----
-    def named_parameters(self) -> Dict[str, MlxArray]:
-        """Return a flat dict of all trainable parameters for this policy.
-        Keys are hierarchical names and values are MLX arrays."""
-        params: Dict[str, MlxArray] = {}
-        # Feature extractors (if present)
-        if hasattr(self, "features_extractor") and hasattr(self.features_extractor, "parameters"):
-            for k, v in self.features_extractor.parameters().items():
-                params[f"features_extractor.{k}"] = v
-        if hasattr(self, "pi_features_extractor") and self.pi_features_extractor is not self.features_extractor:
-            for k, v in self.pi_features_extractor.parameters().items():
-                params[f"pi_features_extractor.{k}"] = v
-        if hasattr(self, "vf_features_extractor") and self.vf_features_extractor is not self.features_extractor:
-            for k, v in self.vf_features_extractor.parameters().items():
-                params[f"vf_features_extractor.{k}"] = v
-        # Networks
-        if hasattr(self, "action_net") and hasattr(self.action_net, "parameters"):
-            for k, v in self.action_net.parameters().items():
-                params[f"action_net.{k}"] = v
-        if hasattr(self, "value_net") and hasattr(self.value_net, "parameters"):
-            for k, v in self.value_net.parameters().items():
-                params[f"value_net.{k}"] = v
-        return params
-
-    def parameters(self) -> Dict[str, MlxArray]:
-        """Alias for named_parameters for optimizer compatibility."""
-        return self.named_parameters()
-
-    def state_dict(self) -> Dict[str, MlxArray]:
-        """Export parameters to a dictionary suitable for serialization."""
-        return {k: v for k, v in self.named_parameters().items()}
-
-    def load_state_dict(self, state_dict: Dict[str, MlxArray], strict: bool = True) -> None:
-        """Load parameters from a state dictionary.
-        If strict is True, raise KeyError for missing parameters."""
-        # Helper: set a parameter by traversing nested modules
-        def set_param_by_path(root_module, path: str, value: MlxArray) -> bool:
-            parts = path.split(".")
-            module = root_module
-            for i, part in enumerate(parts):
-                is_last = i == len(parts) - 1
-                if is_last:
-                    # Set parameter on current module
-                    if hasattr(module, "_parameters") and part in module._parameters:
-                        module._parameters[part] = value
-                        return True
-                    return False
-                # Traverse into submodule
-                if hasattr(module, "_modules") and part in module._modules:
-                    module = module._modules[part]
-                else:
-                    return False
-            return False
+    
+    def __call__(self, obs: MlxArray, deterministic: bool = False) -> Tuple[MlxArray, MlxArray, MlxArray]:
+        """
+        Call the policy forward method.
         
-        # Try to set parameters for each provided key
-        applied_keys = set()
-        for name, value in state_dict.items():
-            if name.startswith("features_extractor.") and hasattr(self, "features_extractor"):
-                if set_param_by_path(self.features_extractor, name.split(".", 1)[1], value):
-                    applied_keys.add(name)
-                    continue
-            if name.startswith("pi_features_extractor.") and hasattr(self, "pi_features_extractor"):
-                if set_param_by_path(self.pi_features_extractor, name.split(".", 1)[1], value):
-                    applied_keys.add(name)
-                    continue
-            if name.startswith("vf_features_extractor.") and hasattr(self, "vf_features_extractor"):
-                if set_param_by_path(self.vf_features_extractor, name.split(".", 1)[1], value):
-                    applied_keys.add(name)
-                    continue
-            if name.startswith("action_net.") and hasattr(self, "action_net"):
-                if set_param_by_path(self.action_net, name.split(".", 1)[1], value):
-                    applied_keys.add(name)
-                    continue
-            if name.startswith("value_net.") and hasattr(self, "value_net"):
-                if set_param_by_path(self.value_net, name.split(".", 1)[1], value):
-                    applied_keys.add(name)
-                    continue
-        
-        if strict and applied_keys != set(state_dict.keys()):
-            unknown = set(state_dict.keys()) - applied_keys
-            if unknown:
-                raise KeyError(f"Unexpected parameter keys: {sorted(list(unknown))}")
-        
-        # Ensure arrays are evaluated on device
-        try:
-            mx.eval(list(self.named_parameters().values()))
-        except Exception:
-            pass
-        return None
+        Args:
+            obs: Observations
+            deterministic: Whether to sample deterministically
+            
+        Returns:
+            Tuple of (actions, values, log_probs)
+        """
+        return self.forward(obs, deterministic=deterministic)
+
+    # Parameter management is now inherited from MlxModule
 
 
 class ActorCriticPolicy(BasePolicy):
@@ -392,6 +321,9 @@ class ActorCriticPolicy(BasePolicy):
             self.vf_features_extractor = self.features_extractor_class(
                 self.observation_space, **self.features_extractor_kwargs
             )
+            # Register them as modules
+            self.add_module("pi_features_extractor", self.pi_features_extractor)
+            self.add_module("vf_features_extractor", self.vf_features_extractor)
         else:
             # Shared features extractor
             self.pi_features_extractor = self.features_extractor
@@ -400,10 +332,14 @@ class ActorCriticPolicy(BasePolicy):
         # Build actor (policy) network
         latent_dim_pi = self.pi_features_extractor.features_dim
         self.action_net = self._build_action_net(latent_dim_pi)
+        # Register action network as a module
+        self.add_module("action_net", self.action_net)
         
         # Build critic (value) network  
         latent_dim_vf = self.vf_features_extractor.features_dim
         self.value_net = self._build_value_net(latent_dim_vf)
+        # Register value network as a module
+        self.add_module("value_net", self.value_net)
         
         # Initialize weights
         if self.ortho_init:
@@ -515,6 +451,19 @@ class ActorCriticPolicy(BasePolicy):
         values = self.predict_values(obs)
         entropy = distribution.entropy()
         return values, log_prob, entropy
+    
+    def __call__(self, obs: MlxArray, deterministic: bool = False) -> Tuple[MlxArray, MlxArray, MlxArray]:
+        """
+        Call the policy forward method.
+        
+        Args:
+            obs: Observations
+            deterministic: Whether to sample deterministically
+            
+        Returns:
+            Tuple of (actions, values, log_probs)
+        """
+        return self.forward(obs, deterministic=deterministic)
 
 
 class MultiInputActorCriticPolicy(ActorCriticPolicy):

@@ -54,6 +54,77 @@ class MlxModule(ABC):
         """Add a submodule to this module."""
         self._modules[name] = module
         setattr(self, name, module)
+    
+    def state_dict(self) -> Dict[str, MlxArray]:
+        """
+        Get state dictionary containing all parameters and buffers.
+        
+        Returns:
+            Dictionary mapping parameter names to their values
+        """
+        return self.parameters()
+    
+    def load_state_dict(self, state_dict: Dict[str, MlxArray], strict: bool = True) -> None:
+        """
+        Load parameters from a state dictionary.
+        
+        Args:
+            state_dict: Dictionary containing parameter names and values
+            strict: Whether to strictly enforce that the keys match exactly
+            
+        Raises:
+            KeyError: If strict=True and keys don't match exactly
+            ValueError: If parameter shapes don't match
+        """
+        current_params = self.parameters()
+        
+        if strict:
+            # Check for missing and unexpected keys
+            missing_keys = set(current_params.keys()) - set(state_dict.keys())
+            unexpected_keys = set(state_dict.keys()) - set(current_params.keys())
+            
+            if missing_keys:
+                raise KeyError(f"Missing keys in state_dict: {missing_keys}")
+            if unexpected_keys:
+                raise KeyError(f"Unexpected keys in state_dict: {unexpected_keys}")
+        
+        # Load parameters, checking shapes
+        for name, param in state_dict.items():
+            if name in current_params:
+                current_param = current_params[name]
+                if current_param.shape != param.shape:
+                    raise ValueError(
+                        f"Parameter '{name}' shape mismatch: "
+                        f"expected {current_param.shape}, got {param.shape}"
+                    )
+                
+                # Update the parameter in the appropriate location
+                self._update_parameter(name, param)
+            elif not strict:
+                # Warn about skipped keys if not in strict mode
+                print(f"Warning: Skipping unexpected key '{name}' in state_dict")
+    
+    def _update_parameter(self, name: str, param: MlxArray) -> None:
+        """
+        Update a parameter by name, handling nested modules.
+        
+        Args:
+            name: Parameter name (may contain dots for nested modules)
+            param: New parameter value
+        """
+        if "." in name:
+            # Handle nested module parameters
+            module_name, rest = name.split(".", 1)
+            if module_name in self._modules:
+                self._modules[module_name]._update_parameter(rest, param)
+            else:
+                raise KeyError(f"Module '{module_name}' not found")
+        else:
+            # Direct parameter
+            if name in self._parameters:
+                self._parameters[name] = param
+            else:
+                raise KeyError(f"Parameter '{name}' not found")
 
 
 class MlxSequential(MlxModule):
@@ -291,6 +362,8 @@ class MlpExtractor(BaseFeaturesExtractor):
             net_arch=net_arch[:-1],  # Exclude last layer (handled by output_dim)
             activation_fn=activation_fn,
         )
+        # Register the MLP as a submodule for proper parameter discovery
+        self.add_module("mlp", self.mlp)
     
     def __call__(self, observations: MlxArray) -> MlxArray:
         """Extract features using MLP."""

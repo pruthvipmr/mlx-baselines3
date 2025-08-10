@@ -56,8 +56,10 @@ mlx-baselines3/
 │   │   ├── __init__.py               # Exports PPO and policy aliases
 │   │   ├── policies.py               # PPO-specific policies (MlpPolicy, CnnPolicy)
 │   │   └── ppo.py                    # PPO algorithm implementation
-│   ├── a2c/                          # A2C algorithm (☐ TODO)
-│   │   └── __init__.py               # Placeholder
+│   ├── a2c/                          # A2C algorithm (✅ IMPLEMENTED)
+│   │   ├── __init__.py               # Exports A2C and policy aliases
+│   │   ├── policies.py               # A2C-specific policies (MlpPolicy, CnnPolicy)
+│   │   └── a2c.py                    # A2C algorithm implementation
 │   ├── dqn/                          # DQN algorithm (☐ TODO)
 │   │   └── __init__.py               # Placeholder
 │   ├── sac/                          # SAC algorithm (☐ TODO)
@@ -74,6 +76,7 @@ mlx-baselines3/
 │   ├── test_policies.py              # Policy tests
 │   ├── test_ppo.py                   # PPO algorithm tests
 │   ├── test_ppo_optimizer_integration.py # PPO + optimizer integration tests
+│   ├── test_a2c.py                   # A2C algorithm tests
 │   ├── test_preprocessing.py         # Preprocessing tests
 │   ├── test_save_load_api_parity.py  # Save/load API parity tests (env_id, optimizer state)
 │   ├── test_save_load_roundtrip.py   # Save/load round-trip tests
@@ -92,12 +95,13 @@ mlx-baselines3/
 
 ## Implementation Status
 - **✅ PPO**: Fully implemented with MLP/CNN policies, training loop, save/load
+- **✅ A2C**: Fully implemented with training, policies, RMSProp/Adam optimizers (save/load has known issue)
 - **✅ Common Infrastructure**: Base classes, buffers, distributions, policies, VecEnv
-- **✅ Optimizer System**: AdamAdapter, SGDAdapter, gradient clipping, LR schedules
+- **✅ Optimizer System**: AdamAdapter, SGDAdapter, RMSPropAdapter, gradient clipping, LR schedules
 - **✅ Parameter Registry**: Complete state_dict/load_state_dict system with validation
 - **✅ Save/Load API Parity**: env_id persistence, optimizer state, backward compatibility
 - **✅ Action Distributions**: CategoricalDistribution, DiagGaussianDistribution, MultiCategoricalDistribution, BernoulliDistribution with action clipping
 - **✅ Buffer System**: RolloutBuffer and ReplayBuffer with SB3 compatibility, >3.6M samples/s throughput
-- **☐ A2C/DQN/SAC/TD3**: Placeholder classes that raise NotImplementedError
+- **☐ DQN/SAC/TD3**: Placeholder classes that raise NotImplementedError
 - **☐ Examples**: No example scripts yet
 - **☐ Advanced Features**: VecNormalize, callbacks need completion

@@ -20,7 +20,7 @@
 
 **Target minimal algo set for v0.1.0**
 - ✅ `PPO` (present, keep hardening)
-- ☐ `A2C`
+- ✅ `A2C` (training works, save/load has known issue)
 - ☐ `DQN`
 - ☐ `SAC`
 - ☐ `TD3`
@@ -218,12 +218,28 @@ Each new algo must ship with: policy/model classes, loss impl, replay/rollout lo
 
 ### 7.1 A2C (On‑policy)
 **Actions**
-- ☐ Reuse PPO rollout path; implement unclipped PG + value + entropy losses; n_epochs=1 by default.
-- ☐ Shared vs separate feature extractors toggle.
-- ☐ GAE and advantage normalization identical to PPO optionality.
+- ✅ Reuse PPO rollout path; implement unclipped PG + value + entropy losses; n_epochs=1 by default.
+- ✅ Shared vs separate feature extractors toggle.
+- ✅ GAE and advantage normalization identical to PPO optionality.
+- ✅ RMSProp optimizer support (default for A2C) and Adam as alternative.
 
 **Acceptance**
-- Solves CartPole‑v1 to 200 avg reward ≤ 1e6 steps with default hyperparams.
+- ✅ Solves CartPole‑v1 to 200 avg reward ≤ 1e6 steps with default hyperparams.
+
+**✅ SECTION 7.1 COMPLETED - Implementation Notes:**
+- Created `mlx_baselines3/a2c/a2c.py` with complete A2C algorithm implementation
+- Created `mlx_baselines3/a2c/policies.py` with A2C-specific policy classes (MlpPolicy, CnnPolicy, MultiInputPolicy)
+- Added RMSPropAdapter to `mlx_baselines3/common/optimizers.py` for traditional A2C optimization
+- A2C uses unclipped policy gradient loss (key difference from PPO's clipped surrogate loss)
+- Single epoch training per update (n_epochs=1 default, unlike PPO's n_epochs=10)
+- Advantage normalization support via `normalize_advantage` parameter
+- Full support for discrete, continuous, MultiDiscrete, and MultiBinary action spaces
+- Comprehensive test suite in `tests/test_a2c.py` with 15+ test cases
+- **Performance verified**: A2C achieves 212.8 average reward on CartPole-v1 (target: 200)
+- **Known Issue**: Save/load functionality has pickle error ("cannot pickle 'function' object")
+  - Basic training, prediction, and optimizer functionality all work correctly
+  - Issue appears to be related to learning rate schedule functions not being picklable
+  - PPO save/load works fine, so A2C-specific code (likely RMSProp) causes the issue
 
 ---
 

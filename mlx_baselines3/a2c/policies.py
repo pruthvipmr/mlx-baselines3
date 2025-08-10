@@ -1,8 +1,8 @@
 """
-PPO-specific policy implementations using MLX.
+A2C-specific policy implementations using MLX.
 
-This module provides policy classes tailored for the PPO algorithm,
-including the main PPOPolicy class and convenience aliases.
+This module provides policy classes tailored for the A2C algorithm,
+including the main A2CPolicy class and convenience aliases.
 """
 
 from typing import Any, Dict, List, Optional, Type, Union
@@ -15,11 +15,11 @@ from mlx_baselines3.common.torch_layers import BaseFeaturesExtractor, FlattenExt
 from mlx_baselines3.common.type_aliases import Schedule
 
 
-class PPOPolicy(ActorCriticPolicy):
+class A2CPolicy(ActorCriticPolicy):
     """
-    Policy class for PPO algorithm using MLX.
+    Policy class for A2C algorithm using MLX.
     
-    This class extends the base ActorCriticPolicy with PPO-specific configurations
+    This class extends the base ActorCriticPolicy with A2C-specific configurations
     and optimizations.
     
     Args:
@@ -53,7 +53,7 @@ class PPOPolicy(ActorCriticPolicy):
         action_space: gym.Space,
         lr_schedule: Schedule,
         net_arch: Optional[Union[List[int], Dict[str, List[int]]]] = None,
-        activation_fn: Type[nn.Module] = nn.Tanh,
+        activation_fn: Type[nn.Module] = nn.ReLU,
         ortho_init: bool = True,
         use_sde: bool = False,
         log_std_init: float = 0.0,
@@ -101,12 +101,12 @@ class PPOPolicy(ActorCriticPolicy):
 
 
 # Convenience aliases for easier import
-MlpPolicy = PPOPolicy
+MlpPolicy = A2CPolicy
 
 
-class CnnPolicy(PPOPolicy):
+class CnnPolicy(A2CPolicy):
     """
-    CNN policy class for PPO when using image observations.
+    CNN policy class for A2C when using image observations.
     
     This policy uses a convolutional neural network for feature extraction
     from image observations.
@@ -124,9 +124,9 @@ class CnnPolicy(PPOPolicy):
         )
 
 
-class MultiInputPolicy(PPOPolicy):
+class MultiInputPolicy(A2CPolicy):
     """
-    MultiInput policy class for PPO when using dictionary observations.
+    MultiInput policy class for A2C when using dictionary observations.
     
     This policy handles multiple input types (e.g., images + vectors)
     through a multi-input features extractor.
@@ -144,16 +144,16 @@ class MultiInputPolicy(PPOPolicy):
 
 
 # Register policy classes for string-based instantiation
-PPO_POLICY_CLASSES = {
+A2C_POLICY_CLASSES = {
     "MlpPolicy": MlpPolicy,
     "CnnPolicy": CnnPolicy, 
     "MultiInputPolicy": MultiInputPolicy,
 }
 
 
-def get_ppo_policy_class(policy_name: str) -> Type[PPOPolicy]:
+def get_a2c_policy_class(policy_name: str) -> Type[A2CPolicy]:
     """
-    Get PPO policy class by name.
+    Get A2C policy class by name.
     
     Args:
         policy_name: Name of the policy class
@@ -164,7 +164,7 @@ def get_ppo_policy_class(policy_name: str) -> Type[PPOPolicy]:
     Raises:
         ValueError: If policy name is not recognized
     """
-    if policy_name in PPO_POLICY_CLASSES:
-        return PPO_POLICY_CLASSES[policy_name]
+    if policy_name in A2C_POLICY_CLASSES:
+        return A2C_POLICY_CLASSES[policy_name]
     else:
-        raise ValueError(f"Unknown policy: {policy_name}. Available policies: {list(PPO_POLICY_CLASSES.keys())}")
+        raise ValueError(f"Unknown policy: {policy_name}. Available policies: {list(A2C_POLICY_CLASSES.keys())}")

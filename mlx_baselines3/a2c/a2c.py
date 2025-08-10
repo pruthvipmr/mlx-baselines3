@@ -1,8 +1,9 @@
 """
-Proximal Policy Optimization (PPO) algorithm implementation using MLX.
+Advantage Actor Critic (A2C) algorithm implementation using MLX.
 
-PPO is an on-policy algorithm that uses a clipped surrogate objective to prevent
-large policy updates, leading to more stable training compared to vanilla policy gradients.
+A2C is an on-policy algorithm that combines value-based and policy-based methods.
+It uses an actor network to learn the policy and a critic network to learn the value function.
+Unlike PPO, A2C uses an unclipped policy gradient loss with a single epoch of training per update.
 """
 
 import time
@@ -32,27 +33,25 @@ from mlx_baselines3.common.optimizers import (
 from mlx_baselines3.common.schedules import get_schedule_fn, make_progress_schedule
 
 
-class PPO(OnPolicyAlgorithm):
+class A2C(OnPolicyAlgorithm):
     """
-    Proximal Policy Optimization algorithm (PPO) using MLX.
+    Advantage Actor Critic (A2C) algorithm using MLX.
     
-    Paper: https://arxiv.org/abs/1707.06347
+    Paper: https://arxiv.org/abs/1602.01783
     
     Args:
         policy: The policy model to use
         env: The environment to learn from
         learning_rate: The learning rate
         n_steps: Number of steps to run for each environment per update
-        batch_size: Minibatch size
-        n_epochs: Number of epochs when optimizing the surrogate loss
         gamma: Discount factor
         gae_lambda: Factor for trade-off of bias vs variance for GAE
-        clip_range: Clipping parameter for PPO surrogate loss
-        clip_range_vf: Clipping parameter for value function loss
         ent_coef: Entropy coefficient for the loss calculation
         vf_coef: Value function coefficient for the loss calculation
         max_grad_norm: Maximum value for gradient clipping
-        target_kl: Threshold for early stopping based on KL divergence
+        normalize_advantage: Whether to normalize advantages
+        use_rms_prop: Whether to use RMSProp optimizer (True) or Adam (False)
+        rms_prop_eps: RMSProp epsilon parameter
         device: Device to use for computation
         verbose: Verbosity level
         seed: Random generator seed
@@ -63,35 +62,31 @@ class PPO(OnPolicyAlgorithm):
         self,
         policy: Union[str, Type[ActorCriticPolicy]],
         env: Union[GymEnv, str],
-        learning_rate: Union[float, Schedule] = 3e-4,
-        n_steps: int = 2048,
-        batch_size: int = 64,
-        n_epochs: int = 10,
+        learning_rate: Union[float, Schedule] = 7e-4,
+        n_steps: int = 5,
         gamma: float = 0.99,
-        gae_lambda: float = 0.95,
-        clip_range: Union[float, Schedule] = 0.2,
-        clip_range_vf: Optional[Union[float, Schedule]] = None,
-        ent_coef: float = 0.0,
+        gae_lambda: float = 1.0,
+        ent_coef: float = 0.01,
         vf_coef: float = 0.5,
         max_grad_norm: float = 0.5,
-        target_kl: Optional[float] = None,
+        normalize_advantage: bool = False,
+        use_rms_prop: bool = True,
+        rms_prop_eps: float = 1e-5,
         device: str = "auto",
         verbose: int = 0,
         seed: Optional[int] = None,
         **kwargs,
     ):
-        # PPO hyperparameters (set before super init)
+        # A2C hyperparameters (set before super init)
         self.n_steps = n_steps
-        self.batch_size = batch_size
-        self.n_epochs = n_epochs
         self.gamma = gamma
         self.gae_lambda = gae_lambda
-        self.clip_range = clip_range
-        self.clip_range_vf = clip_range_vf
         self.ent_coef = ent_coef
         self.vf_coef = vf_coef
         self.max_grad_norm = max_grad_norm
-        self.target_kl = target_kl
+        self.normalize_advantage = normalize_advantage
+        self.use_rms_prop = use_rms_prop
+        self.rms_prop_eps = rms_prop_eps
         
         super().__init__(
             policy=policy,
@@ -116,13 +111,13 @@ class PPO(OnPolicyAlgorithm):
     def _setup_model(self) -> None:
         """Setup model: create policy, networks, buffers, optimizers, etc."""
         if self.verbose >= 1:
-            print("Setting up PPO model...")
+            print("Setting up A2C model...")
             
         # Create policy
         self._make_policy()
         
         # Initialize rollout buffer
-        assert isinstance(self.env, VecEnv), "PPO requires a vectorized environment"
+        assert isinstance(self.env, VecEnv), "A2C requires a vectorized environment"
         
         if self.verbose >= 1:
             print("Creating rollout buffer...")
@@ -136,6 +131,7 @@ class PPO(OnPolicyAlgorithm):
                 gamma=self.gamma,
                 gae_lambda=self.gae_lambda,
                 n_envs=self.env.num_envs,
+                normalize_advantage=self.normalize_advantage,
             )
             if self.verbose >= 1:
                 print(f"Rollout buffer created: {self.rollout_buffer}")
@@ -145,7 +141,7 @@ class PPO(OnPolicyAlgorithm):
             raise
         
         if self.verbose >= 1:
-            print("PPO model setup complete")
+            print("A2C model setup complete")
     
     def _setup_optimizer(self) -> None:
         """Setup the optimizer adapter with proper schedule support."""
@@ -155,28 +151,40 @@ class PPO(OnPolicyAlgorithm):
         # Create learning rate schedule function
         lr_schedule = get_schedule_fn(self.learning_rate)
         
-        # Create optimizer adapter (default to Adam)
-        self.optimizer_adapter = create_optimizer_adapter(
-            optimizer_name="adam",
-            learning_rate=lr_schedule,
-            betas=(0.9, 0.999),
-            eps=1e-8,
-            weight_decay=0.0
-        )
+        # Create optimizer adapter (RMSProp by default for A2C, Adam as alternative)
+        if self.use_rms_prop:
+            # RMSProp is the traditional choice for A2C
+            self.optimizer_adapter = create_optimizer_adapter(
+                optimizer_name="rmsprop",
+                learning_rate=lr_schedule,
+                alpha=0.99,
+                eps=self.rms_prop_eps,
+                weight_decay=0.0
+            )
+        else:
+            # Adam alternative
+            self.optimizer_adapter = create_optimizer_adapter(
+                optimizer_name="adam",
+                learning_rate=lr_schedule,
+                betas=(0.9, 0.999),
+                eps=1e-8,
+                weight_decay=0.0
+            )
         
         # Get initial parameters from policy and initialize optimizer state
         initial_params = self.policy.state_dict()
         self.optimizer_state = self.optimizer_adapter.init_state(initial_params)
         
         if self.verbose >= 1:
-            print(f"Optimizer adapter initialized: {type(self.optimizer_adapter).__name__}")
+            optimizer_name = "RMSProp" if self.use_rms_prop else "Adam"
+            print(f"Optimizer adapter initialized: {optimizer_name}")
         
     def _make_policy(self) -> None:
         """Create policy instance."""
-        from mlx_baselines3.ppo.policies import get_ppo_policy_class
+        from mlx_baselines3.a2c.policies import get_a2c_policy_class
         
         if isinstance(self.policy, str):
-            policy_class = get_ppo_policy_class(self.policy)
+            policy_class = get_a2c_policy_class(self.policy)
             self.policy = policy_class(
                 observation_space=self.observation_space,
                 action_space=self.action_space,
@@ -287,7 +295,7 @@ class PPO(OnPolicyAlgorithm):
         
     def train(self) -> None:
         """
-        Update policy using PPO algorithm.
+        Update policy using A2C algorithm (single epoch).
         """
         # Switch to training mode
         self.policy.set_training_mode(True)
@@ -295,124 +303,81 @@ class PPO(OnPolicyAlgorithm):
         # Update optimizer learning rate
         self._update_learning_rate(self.policy.optimizer)
         
-        # Get current clip and value function clip ranges
-        clip_range = self._get_schedule_value(self.clip_range)
-        clip_range_vf = self._get_schedule_value(self.clip_range_vf) if self.clip_range_vf is not None else None
-        
         entropy_losses = []
         pg_losses = []
         value_losses = []
-        clip_fractions = []
-        
-        continue_training = True
         
         # Initialize a flat parameter dict for functional updates
         params = self.policy.state_dict()
         
-        # Train for n_epochs
-        for epoch in range(self.n_epochs):
-            approx_kl_divs = []
+        # A2C trains for only 1 epoch (unlike PPO)
+        # Do a complete pass on the rollout buffer
+        for rollout_data in self.rollout_buffer.get(self.rollout_buffer.buffer_size * self.rollout_buffer.n_envs):
+            actions = rollout_data["actions"]
             
-            # Do a complete pass on the rollout buffer
-            for rollout_data in self.rollout_buffer.get(self.batch_size):
-                actions = rollout_data["actions"]
-                
-                # Define loss as a pure function of params
-                def loss_fn(p):
-                    # Load params into policy for forward computations
-                    self.policy.load_state_dict(p, strict=False)
-                    return self._compute_loss(rollout_data, self.policy, clip_range, clip_range_vf)
-                
-                # Compute loss and gradients using centralized helper
-                loss_val, grads = compute_loss_and_grads(loss_fn, params)
-                
-                # Clip gradients using improved clipping function
-                if self.max_grad_norm is not None:
-                    grads, grad_norm = clip_grad_norm(grads, self.max_grad_norm)
-                else:
-                    # Compute gradient norm for logging even without clipping
-                    grad_norm = float(mx.sqrt(sum(mx.sum(grad ** 2) for grad in grads.values() if grad is not None)))
-                
-                # Update parameters using optimizer adapter
-                if self.optimizer_adapter is not None and self.optimizer_state is not None:
-                    try:
-                        params, self.optimizer_state = self.optimizer_adapter.update(
-                            params, grads, self.optimizer_state
-                        )
-                    except Exception as e:
-                        warnings.warn(
-                            f"Optimizer update failed: {e}. Falling back to SGD.",
-                            UserWarning
-                        )
-                        # Fallback to simple SGD
-                        lr = 3e-4  # Default learning rate
-                        params = {k: params[k] - lr * grads.get(k, 0) for k in params.keys()}
-                else:
-                    # Fallback to simple SGD if optimizer not initialized
-                    lr = 3e-4  # Default learning rate
-                    params = {k: params[k] - lr * grads.get(k, 0) for k in params.keys()}
-                
-                # Ensure policy reflects latest params
-                self.policy.load_state_dict(params, strict=False)
-                mx.eval(list(params.values()))
-                
-                # For logging, recompute key terms with current policy
-                values, log_prob, entropy = self.policy.evaluate_actions(
-                    rollout_data["observations"], actions
-                )
-                values = mx.flatten(values)
-                
-                # Normalize advantages
-                advantages = rollout_data["advantages"]
-                if len(advantages) > 1:
-                    advantages = (advantages - mx.mean(advantages)) / (mx.std(advantages) + 1e-8)
-                
-                # Ratio between old and new policy  
-                ratio = mx.exp(log_prob - rollout_data["log_probs"])
-                
-                # Clipped surrogate loss
-                policy_loss_1 = advantages * ratio
-                policy_loss_2 = advantages * mx.clip(ratio, 1 - clip_range, 1 + clip_range)
-                policy_loss = -mx.mean(mx.minimum(policy_loss_1, policy_loss_2))
-                
-                # Calculate clip fraction for diagnostics
-                clip_fraction = mx.mean((mx.abs(ratio - 1) > clip_range).astype(mx.float32))
-                clip_fractions.append(float(clip_fraction))
-                
-                # Value loss
-                if clip_range_vf is None:
-                    # No clipping
-                    value_loss = mx.mean((rollout_data["returns"] - values) ** 2)
-                else:
-                    # Clipped value loss
-                    values_pred = rollout_data["values"] + mx.clip(
-                        values - rollout_data["values"], -clip_range_vf, clip_range_vf
+            # Define loss as a pure function of params
+            def loss_fn(p):
+                # Load params into policy for forward computations
+                self.policy.load_state_dict(p, strict=False)
+                return self._compute_loss(rollout_data, self.policy)
+            
+            # Compute loss and gradients using centralized helper
+            loss_val, grads = compute_loss_and_grads(loss_fn, params)
+            
+            # Clip gradients using improved clipping function
+            if self.max_grad_norm is not None:
+                grads, grad_norm = clip_grad_norm(grads, self.max_grad_norm)
+            else:
+                # Compute gradient norm for logging even without clipping
+                grad_norm = float(mx.sqrt(sum(mx.sum(grad ** 2) for grad in grads.values() if grad is not None)))
+            
+            # Update parameters using optimizer adapter
+            if self.optimizer_adapter is not None and self.optimizer_state is not None:
+                try:
+                    params, self.optimizer_state = self.optimizer_adapter.update(
+                        params, grads, self.optimizer_state
                     )
-                    value_loss_1 = (rollout_data["returns"] - values) ** 2
-                    value_loss_2 = (rollout_data["returns"] - values_pred) ** 2
-                    value_loss = mx.mean(mx.maximum(value_loss_1, value_loss_2))
+                except Exception as e:
+                    warnings.warn(
+                        f"Optimizer update failed: {e}. Falling back to SGD.",
+                        UserWarning
+                    )
+                    # Fallback to simple SGD
+                    lr = 7e-4  # Default learning rate
+                    params = {k: params[k] - lr * grads.get(k, 0) for k in params.keys()}
+            else:
+                # Fallback to simple SGD if optimizer not initialized
+                lr = 7e-4  # Default learning rate
+                params = {k: params[k] - lr * grads.get(k, 0) for k in params.keys()}
+            
+            # Ensure policy reflects latest params
+            self.policy.load_state_dict(params, strict=False)
+            mx.eval(list(params.values()))
+            
+            # For logging, recompute key terms with current policy
+            values, log_prob, entropy = self.policy.evaluate_actions(
+                rollout_data["observations"], actions
+            )
+            values = mx.flatten(values)
+            
+            # Get advantages (already computed in buffer)
+            advantages = rollout_data["advantages"]
+            
+            # Unclipped policy gradient loss (key difference from PPO)
+            policy_loss = -mx.mean(advantages * log_prob)
+            
+            # Value loss
+            value_loss = mx.mean((rollout_data["returns"] - values) ** 2)
+            
+            # Entropy loss
+            entropy_loss = -mx.mean(entropy) if entropy is not None else 0.0
+            
+            # Store losses for logging
+            pg_losses.append(float(policy_loss))
+            value_losses.append(float(value_loss))
+            entropy_losses.append(float(entropy_loss))
                 
-                # Entropy loss
-                entropy_loss = -mx.mean(entropy) if entropy is not None else 0.0
-                
-                # Store losses for logging
-                pg_losses.append(float(policy_loss))
-                value_losses.append(float(value_loss))
-                entropy_losses.append(float(entropy_loss))
-                
-                # Approximate KL divergence for early stopping
-                log_ratio = log_prob - rollout_data["log_probs"]
-                approx_kl_div = mx.mean((mx.exp(log_ratio) - 1) - log_ratio)
-                approx_kl_divs.append(float(approx_kl_div))
-                    
-            # Early stopping based on KL divergence
-            if self.target_kl is not None and np.mean(approx_kl_divs) > 1.5 * self.target_kl:
-                if self.verbose >= 1:
-                    print(f"Early stopping at step {epoch} due to reaching max kl: {np.mean(approx_kl_divs):.2f}")
-                continue_training = False
-                break
-                
-        self._n_updates += self.n_epochs
+        self._n_updates += 1
         explained_var = explained_variance(mx.array(self.rollout_buffer.values.flatten()), mx.array(self.rollout_buffer.returns.flatten()))
         
         # Log training metrics
@@ -421,41 +386,23 @@ class PPO(OnPolicyAlgorithm):
             print(f"Policy loss: {np.mean(pg_losses):.3f}")
             print(f"Value loss: {np.mean(value_losses):.3f}")
             print(f"Entropy loss: {np.mean(entropy_losses):.3f}")
-            print(f"Clip fraction: {np.mean(clip_fractions):.3f}")
-            if approx_kl_divs:
-                print(f"KL divergence: {np.mean(approx_kl_divs):.3f}")
                 
-    def _compute_loss(self, rollout_data: Dict[str, MlxArray], model, clip_range: float, clip_range_vf: Optional[float]) -> MlxArray:
-        """Compute the total loss for PPO."""
+    def _compute_loss(self, rollout_data: Dict[str, MlxArray], model) -> MlxArray:
+        """Compute the total loss for A2C."""
         actions = rollout_data["actions"]
         
         # Get current policy predictions
         values, log_prob, entropy = model.evaluate_actions(rollout_data["observations"], actions)
         values = mx.flatten(values)
         
-        # Normalize advantages
+        # Get advantages (already computed in buffer, optionally normalized)
         advantages = rollout_data["advantages"]
-        if len(advantages) > 1:
-            advantages = (advantages - mx.mean(advantages)) / (mx.std(advantages) + 1e-8)
         
-        # Ratio between old and new policy
-        ratio = mx.exp(log_prob - rollout_data["log_probs"])
-        
-        # Clipped surrogate loss
-        policy_loss_1 = advantages * ratio
-        policy_loss_2 = advantages * mx.clip(ratio, 1 - clip_range, 1 + clip_range)
-        policy_loss = -mx.mean(mx.minimum(policy_loss_1, policy_loss_2))
+        # Unclipped policy gradient loss (key difference from PPO)
+        policy_loss = -mx.mean(advantages * log_prob)
         
         # Value loss
-        if clip_range_vf is None:
-            value_loss = mx.mean((rollout_data["returns"] - values) ** 2)
-        else:
-            values_pred = rollout_data["values"] + mx.clip(
-                values - rollout_data["values"], -clip_range_vf, clip_range_vf
-            )
-            value_loss_1 = (rollout_data["returns"] - values) ** 2
-            value_loss_2 = (rollout_data["returns"] - values_pred) ** 2
-            value_loss = mx.mean(mx.maximum(value_loss_1, value_loss_2))
+        value_loss = mx.mean((rollout_data["returns"] - values) ** 2)
         
         # Entropy loss
         entropy_loss = -mx.mean(entropy) if entropy is not None else 0.0
@@ -463,14 +410,12 @@ class PPO(OnPolicyAlgorithm):
         # Total loss
         return policy_loss + self.ent_coef * entropy_loss + self.vf_coef * value_loss
         
-
-        
     def learn(
         self,
         total_timesteps: int,
         callback=None,
-        log_interval: int = 1,
-        tb_log_name: str = "PPO",
+        log_interval: int = 100,
+        tb_log_name: str = "A2C",
         reset_num_timesteps: bool = True,
         progress_bar: bool = False,
     ):
@@ -584,22 +529,19 @@ class PPO(OnPolicyAlgorithm):
         """Get algorithm-specific data for saving."""
         return {
             "n_steps": self.n_steps,
-            "batch_size": self.batch_size,
-            "n_epochs": self.n_epochs,
             "gamma": self.gamma,
             "gae_lambda": self.gae_lambda,
-            "clip_range": self.clip_range,
-            "clip_range_vf": self.clip_range_vf,
             "ent_coef": self.ent_coef,
             "vf_coef": self.vf_coef,
             "max_grad_norm": self.max_grad_norm,
-            "target_kl": self.target_kl,
+            "normalize_advantage": self.normalize_advantage,
+            "use_rms_prop": self.use_rms_prop,
+            "rms_prop_eps": self.rms_prop_eps,
         }
         
     def _load_save_data(self, data: Dict[str, Any]) -> None:
         """Load algorithm-specific data."""
-        for key in ["n_steps", "batch_size", "n_epochs", "gamma", "gae_lambda", 
-                   "clip_range", "clip_range_vf", "ent_coef", "vf_coef", 
-                   "max_grad_norm", "target_kl"]:
+        for key in ["n_steps", "gamma", "gae_lambda", "ent_coef", "vf_coef", 
+                   "max_grad_norm", "normalize_advantage", "use_rms_prop", "rms_prop_eps"]:
             if key in data:
                 setattr(self, key, data[key])

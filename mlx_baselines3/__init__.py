@@ -4,15 +4,12 @@ __version__ = "0.1.0"
 
 # Algorithms - implemented
 from mlx_baselines3.ppo import PPO
+from mlx_baselines3.a2c import A2C
 
 # Policy aliases - available for implemented algorithms
 from mlx_baselines3.ppo import MlpPolicy, CnnPolicy, MultiInputPolicy
 
 # Algorithms - not yet implemented (placeholder imports for API compatibility)
-class A2C:
-    """A2C algorithm - not yet implemented"""
-    def __init__(self, *args, **kwargs):
-        raise NotImplementedError("A2C is not yet implemented in MLX Baselines3")
 
 class DQN:
     """DQN algorithm - not yet implemented"""

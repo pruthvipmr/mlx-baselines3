@@ -142,6 +142,109 @@ class AdamAdapter:
         return new_params, new_state
 
 
+class RMSPropAdapter:
+    """
+    Functional RMSProp optimizer adapter for MLX.
+    
+    RMSProp maintains a moving average of squared gradients to adapt
+    the learning rate per parameter, which is effective for non-stationary objectives.
+    """
+    
+    def __init__(
+        self,
+        learning_rate: Union[float, Callable[[int], float]] = 1e-3,
+        alpha: float = 0.99,
+        eps: float = 1e-8,
+        weight_decay: float = 0.0
+    ):
+        """
+        Initialize RMSProp optimizer adapter.
+        
+        Args:
+            learning_rate: Learning rate (constant or schedule function)
+            alpha: Smoothing constant (decay factor for moving average)
+            eps: Epsilon for numerical stability
+            weight_decay: L2 weight decay coefficient
+        """
+        self.learning_rate = learning_rate
+        self.alpha = alpha
+        self.eps = eps
+        self.weight_decay = weight_decay
+    
+    def init_state(self, params: Dict[str, mx.array]) -> OptimizerState:
+        """
+        Initialize optimizer state for RMSProp.
+        
+        Args:
+            params: Dictionary of parameter arrays
+            
+        Returns:
+            Initial optimizer state with zero squared gradient averages
+        """
+        # Initialize squared gradient moving averages
+        v = {k: mx.zeros_like(param) for k, param in params.items()}
+        
+        return OptimizerState(
+            step=0,
+            m={},  # RMSProp doesn't use first moments
+            v=v
+        )
+    
+    def update(
+        self,
+        params: Dict[str, mx.array],
+        grads: Dict[str, mx.array],
+        state: OptimizerState
+    ) -> Tuple[Dict[str, mx.array], OptimizerState]:
+        """
+        Perform RMSProp update step.
+        
+        Args:
+            params: Current parameter dictionary
+            grads: Gradient dictionary
+            state: Current optimizer state
+            
+        Returns:
+            Tuple of (updated_params, updated_state)
+        """
+        # Get current learning rate
+        if callable(self.learning_rate):
+            current_lr = self.learning_rate(state["step"])
+        else:
+            current_lr = self.learning_rate
+        
+        new_step = state["step"] + 1
+        new_params = {}
+        new_v = {}
+        
+        for key in params.keys():
+            if key not in grads:
+                new_params[key] = params[key]
+                new_v[key] = state["v"][key]
+                continue
+            
+            param = params[key]
+            grad = grads[key]
+            
+            # Apply weight decay
+            if self.weight_decay > 0:
+                grad = grad + self.weight_decay * param
+            
+            # Update squared gradient moving average
+            new_v[key] = self.alpha * state["v"][key] + (1 - self.alpha) * (grad ** 2)
+            
+            # Update parameters
+            new_params[key] = param - current_lr * grad / (mx.sqrt(new_v[key]) + self.eps)
+        
+        new_state = OptimizerState(
+            step=new_step,
+            m={},
+            v=new_v
+        )
+        
+        return new_params, new_state
+
+
 class SGDAdapter:
     """
     Functional SGD optimizer adapter for MLX.
@@ -253,12 +356,12 @@ def create_optimizer_adapter(
     optimizer_name: str,
     learning_rate: Union[float, Callable[[int], float]] = 1e-3,
     **kwargs
-) -> Union[AdamAdapter, SGDAdapter]:
+) -> Union[AdamAdapter, RMSPropAdapter, SGDAdapter]:
     """
     Factory function to create optimizer adapters.
     
     Args:
-        optimizer_name: Name of optimizer ('adam', 'sgd')
+        optimizer_name: Name of optimizer ('adam', 'rmsprop', 'sgd')
         learning_rate: Learning rate (constant or callable schedule)
         **kwargs: Additional optimizer-specific arguments
         
@@ -272,10 +375,12 @@ def create_optimizer_adapter(
     
     if optimizer_name == "adam":
         return AdamAdapter(learning_rate=learning_rate, **kwargs)
+    elif optimizer_name == "rmsprop":
+        return RMSPropAdapter(learning_rate=learning_rate, **kwargs)
     elif optimizer_name == "sgd":
         return SGDAdapter(learning_rate=learning_rate, **kwargs)
     else:
-        raise ValueError(f"Unsupported optimizer: {optimizer_name}. Supported: 'adam', 'sgd'")
+        raise ValueError(f"Unsupported optimizer: {optimizer_name}. Supported: 'adam', 'rmsprop', 'sgd'")
 
 
 def clip_grad_norm(

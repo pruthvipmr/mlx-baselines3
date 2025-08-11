@@ -15,11 +15,11 @@ A drop-in replacement for [Stable Baselines 3](https://stable-baselines3.readthe
 
 | Algorithm | Type | Status | Action Spaces | Observation Spaces |
 |-----------|------|--------|---------------|-------------------|
-| **PPO** | On-Policy | ✅ Complete | Discrete, Box, MultiDiscrete, MultiBinary | Box, Dict |
-| **A2C** | On-Policy | ✅ Complete | Discrete, Box, MultiDiscrete, MultiBinary | Box, Dict |
-| **DQN** | Off-Policy | ✅ Complete | Discrete, MultiDiscrete, MultiBinary | Box, Dict |
-| **SAC** | Off-Policy | ✅ Complete | Box | Box, Dict |
-| **TD3** | Off-Policy | ✅ Complete | Box | Box, Dict |
+| **PPO** | On-Policy | Complete | Discrete, Box, MultiDiscrete, MultiBinary | Box, Dict |
+| **A2C** | On-Policy | Complete | Discrete, Box, MultiDiscrete, MultiBinary | Box, Dict |
+| **DQN** | Off-Policy | Complete | Discrete, MultiDiscrete, MultiBinary | Box, Dict |
+| **SAC** | Off-Policy | Complete | Box | Box, Dict |
+| **TD3** | Off-Policy | Complete | Box | Box, Dict |
 
 ## Installation
 
@@ -208,7 +208,7 @@ env = VecNormalize.load("vec_normalize.pkl", env)
 | **Backend** | PyTorch | MLX |
 | **Memory** | Manual GPU management | Automatic |
 | **Performance** | Good on NVIDIA | Optimized for Apple |
-| **API** | ✅ Complete | ✅ Compatible |
+| **API** | Complete | Compatible |
 
 ## Examples
 
@@ -239,31 +239,6 @@ uv run pytest -m "not slow"
 
 # Specific algorithm
 uv run pytest tests/test_ppo.py
-```
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature-name`
-3. Make changes and add tests
-4. Run tests: `uv run pytest`
-5. Submit a pull request
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Citation
-
-If you use MLX Baselines3 in your research, please cite:
-
-```bibtex
-@software{mlx_baselines3,
-  title={MLX Baselines3: Reinforcement Learning on Apple Silicon},
-  author={Pruthvi P.M.R.},
-  year={2024},
-  url={https://github.com/pruthvipmr/mlx-baselines3}
-}
 ```
 
 ## Acknowledgments

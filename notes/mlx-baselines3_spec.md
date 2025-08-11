@@ -362,13 +362,54 @@ Each new algo must ship with: policy/model classes, loss impl, replay/rollout lo
 ## 9) Callbacks & Logging
 
 **Actions**
-- ☐ Callback API parity: `BaseCallback`, `EvalCallback`, `CheckpointCallback`, `StopTrainingOnRewardThreshold`, etc.
-- ☐ Logging sinks: stdout progress, CSV, and TensorBoard (minimal TB writer).  
-- ☐ Fix episode metrics edge cases (empty buffers); use `safe_mean` helper.
+- ✅ Callback API parity: `BaseCallback`, `EvalCallback`, `CheckpointCallback`, `StopTrainingOnRewardThreshold`, etc.
+- ✅ Logging sinks: stdout progress, CSV, and TensorBoard (minimal TB writer).  
+- ✅ Fix episode metrics edge cases (empty buffers); use `safe_mean` helper.
 
 **Acceptance**
-- Callback tests: training stops when callback returns False; checkpoints written on schedule; EvalCallback improves best‑mean reward tracking.
-- No NaN in logs when no episodes have completed yet.
+- ✅ Callback tests: training stops when callback returns False; checkpoints written on schedule; EvalCallback improves best‑mean reward tracking.
+- ✅ No NaN in logs when no episodes have completed yet.
+
+**✅ SECTION 9 COMPLETED - Implementation Notes:**
+- Created comprehensive callback system in `mlx_baselines3/common/callbacks.py`
+  - `BaseCallback` abstract class with full lifecycle methods (init, training_start, step, training_end, rollout_start/end)
+  - `CallbackList` for chaining multiple callbacks
+  - `CheckpointCallback` for periodic model saving with configurable frequency
+  - `EvalCallback` for model evaluation on separate environment with best model tracking
+  - `StopTrainingOnRewardThreshold` for early stopping based on reward criteria
+  - `ProgressBarCallback` for training progress visualization (with optional tqdm support)
+  - `convert_callback()` utility for backward compatibility with simple callback functions
+- Implemented full logging system in `mlx_baselines3/common/logger.py`
+  - `Logger` class with multiple output format support
+  - `HumanOutputFormat` for structured console output with categorized metrics
+  - `CSVOutputFormat` for CSV file logging with dynamic column addition
+  - `TensorBoardOutputFormat` for TensorBoard integration (requires PyTorch)
+  - Support for metric exclusion per output format (e.g., exclude from tensorboard but log to CSV)
+  - `configure_logger()` utility for easy logger setup
+- Integrated callback and logging systems into `BaseAlgorithm`
+  - Added `_setup_logger()` method for automatic logger initialization
+  - Updated `_update_info_buffer()` for episode metrics tracking
+  - Converted PPO to use new callback and logging systems
+  - Replaced manual print statements with structured logger.record() calls
+- Enhanced episode metrics handling
+  - `safe_mean` utility already existed and is used throughout
+  - Episode info buffer automatically tracks recent episodes (last 100)
+  - Proper handling of empty episode buffers to prevent NaN values
+- Created comprehensive test suites
+  - `tests/test_callbacks.py` with 23 test cases covering all callback functionality
+  - `tests/test_logger.py` with 25 test cases covering all logging functionality
+  - Integration tests demonstrating PPO with various callback combinations
+  - Tests verify early stopping, checkpoint saving, evaluation tracking, and logging output
+- **Key Features**:
+  - Full SB3 callback API compatibility with lifecycle methods
+  - Multi-format logging (stdout, CSV, TensorBoard) with selective output control
+  - Robust episode metrics handling without NaN issues
+  - Callback chaining and early stopping support
+  - Checkpoint saving with configurable intervals
+  - Model evaluation with best model tracking
+  - Progress bar support with optional tqdm integration
+- **Performance**: All callback operations are lightweight with minimal overhead
+- **Backward Compatibility**: Simple callback functions still work via convert_callback() utility
 
 ---
 

@@ -509,23 +509,25 @@ class PPO(OnPolicyAlgorithm):
             if log_interval is not None and iteration % log_interval == 0:
                 time_elapsed = max((time.time() - self.start_time), 1e-8)
                 fps = int((self.num_timesteps - self._num_timesteps_at_start) / time_elapsed)
-                if self.verbose >= 1:
-                    print(f"------------------------------------")
-                    print(f"| rollout/              |         |")
+                
+                # Record metrics with logger
+                if self.logger is not None:
+                    # Episode metrics
                     if hasattr(self, 'ep_info_buffer') and len(self.ep_info_buffer) > 0:
-                        ep_len_mean = float(np.mean([ep_info['l'] for ep_info in self.ep_info_buffer]))
-                        ep_rew_mean = float(np.mean([ep_info['r'] for ep_info in self.ep_info_buffer]))
-                    else:
-                        ep_len_mean = 0.0
-                        ep_rew_mean = 0.0
-                    print(f"|    ep_len_mean        | {ep_len_mean:.1f}     |")
-                    print(f"|    ep_rew_mean        | {ep_rew_mean:.1f}     |")
-                    print(f"| time/                 |         |")
-                    print(f"|    fps                | {fps}       |")
-                    print(f"|    iterations         | {iteration}       |")
-                    print(f"|    time_elapsed       | {int(time_elapsed)}       |")
-                    print(f"|    total_timesteps    | {self.num_timesteps}       |")
-                    print(f"------------------------------------")
+                        from mlx_baselines3.common.utils import safe_mean
+                        ep_len_mean = safe_mean(np.array([ep_info['l'] for ep_info in self.ep_info_buffer]))
+                        ep_rew_mean = safe_mean(np.array([ep_info['r'] for ep_info in self.ep_info_buffer]))
+                        self.logger.record("rollout/ep_len_mean", float(ep_len_mean))
+                        self.logger.record("rollout/ep_rew_mean", float(ep_rew_mean))
+                    
+                    # Time metrics
+                    self.logger.record("time/fps", fps)
+                    self.logger.record("time/iterations", iteration)
+                    self.logger.record("time/time_elapsed", int(time_elapsed))
+                    self.logger.record("time/total_timesteps", self.num_timesteps)
+                    
+                    # Dump to outputs
+                    self.logger.dump(step=self.num_timesteps)
             
             self.train()
             
@@ -545,34 +547,20 @@ class PPO(OnPolicyAlgorithm):
         self._num_timesteps_at_start = self.num_timesteps
         self.start_time = time.time()
         
-        # Initialize callback (simple placeholder for now)
-        if callback is None:
-            from types import SimpleNamespace
-            callback = SimpleNamespace()
-            callback.on_training_start = lambda *args, **kwargs: None
-            callback.on_step = lambda *args, **kwargs: True
-            callback.on_training_end = lambda *args, **kwargs: None
+        # Initialize callback system
+        from mlx_baselines3.common.callbacks import convert_callback
+        callback = convert_callback(callback)
+        if hasattr(callback, 'init_callback'):
+            callback.init_callback(self)
+        
+        # Setup logger
+        self._setup_logger(tb_log_name=tb_log_name)
         
         # Reset environment
         self._last_obs = self.env.reset()
         self._last_episode_starts = np.ones((self.env.num_envs,), dtype=bool)
         
         return total_timesteps, callback
-        
-    def _update_info_buffer(self, infos):
-        """Update the info buffer with episode information."""
-        if not hasattr(self, 'ep_info_buffer'):
-            self.ep_info_buffer = []
-            
-        for info in infos:
-            if isinstance(info, dict):
-                if 'episode' in info:
-                    ep_info = info['episode']
-                    if 'r' in ep_info and 'l' in ep_info:
-                        self.ep_info_buffer.append({'r': ep_info['r'], 'l': ep_info['l']})
-                        # Keep only last 100 episodes
-                        if len(self.ep_info_buffer) > 100:
-                            self.ep_info_buffer.pop(0)
                             
     def _update_learning_rate(self, optimizer):
         """Update learning rate in the optimizer."""

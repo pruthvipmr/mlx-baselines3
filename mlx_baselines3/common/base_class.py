@@ -25,6 +25,7 @@ from mlx_baselines3.common.utils import (
     obs_as_mlx,
     set_random_seed,
 )
+from mlx_baselines3.common.logger import Logger, configure_logger
 
 
 class BaseAlgorithm(ABC):
@@ -96,6 +97,12 @@ class BaseAlgorithm(ABC):
                 f"Action space {self.action_space} is not supported. "
                 f"Supported action spaces: {supported_action_spaces}"
             )
+        
+        # Initialize logger (will be set up properly in learn())
+        self.logger = None
+        
+        # Episode info buffer for tracking episode metrics
+        self.ep_info_buffer = []
         
         # Algorithm-specific initialization
         self._setup_model()
@@ -185,6 +192,47 @@ class BaseAlgorithm(ABC):
             actions = np.atleast_1d(actions)
 
         return actions, state
+
+    def _setup_logger(
+        self,
+        log_path: Optional[str] = None,
+        tb_log_name: str = "run",
+        reset_num_timesteps: bool = True,
+    ) -> None:
+        """
+        Setup logger for training.
+        
+        Args:
+            log_path: Path to save logs
+            tb_log_name: Name for TensorBoard logs
+            reset_num_timesteps: Whether to reset timestep counter
+        """
+        if log_path is not None:
+            format_strings = ["stdout", "csv", "tensorboard"]
+        else:
+            format_strings = ["stdout"]
+            
+        self.logger = configure_logger(log_path, format_strings)
+
+    def _update_info_buffer(self, infos: List[Dict]) -> None:
+        """
+        Update episode info buffer with information from environments.
+        
+        Args:
+            infos: List of info dicts from environment steps
+        """
+        for info in infos:
+            if isinstance(info, dict) and 'episode' in info:
+                ep_info = info['episode']
+                # Store episode reward and length
+                self.ep_info_buffer.append({
+                    'r': ep_info.get('r', 0.0),
+                    'l': ep_info.get('l', 0.0),
+                    't': ep_info.get('t', 0.0),  # time
+                })
+                # Keep only recent episodes (last 100)
+                if len(self.ep_info_buffer) > 100:
+                    self.ep_info_buffer = self.ep_info_buffer[-100:]
 
     def save(self, path: str) -> None:
         """

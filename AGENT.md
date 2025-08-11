@@ -40,7 +40,9 @@ mlx-baselines3/
 │   │   ├── __init__.py
 │   │   ├── base_class.py             # BaseAlgorithm, OnPolicy/OffPolicy classes
 │   │   ├── buffers.py                # RolloutBuffer for on-policy algorithms
+│   │   ├── callbacks.py              # Callback system (BaseCallback, EvalCallback, etc.)
 │   │   ├── distributions.py          # Action distributions (Categorical, DiagGaussian)
+│   │   ├── logger.py                 # Logging system (Logger, multiple output formats)
 │   │   ├── optimizers.py             # MLX optimizer adapters (AdamAdapter, SGDAdapter)
 │   │   ├── policies.py               # Base policy classes (ActorCriticPolicy, etc.)
 │   │   ├── preprocessing.py          # Input preprocessing utilities
@@ -76,8 +78,10 @@ mlx-baselines3/
 ├── tests/                            # Test suite
 │   ├── test_buffers.py               # Buffer functionality tests
 │   ├── test_buffer_performance.py    # Buffer performance benchmarks
+│   ├── test_callbacks.py             # Callback system tests
 │   ├── test_distributions.py         # Distribution math tests
 │   ├── test_imports.py               # Import compatibility tests
+│   ├── test_logger.py                # Logging system tests
 │   ├── test_optimizers.py            # Optimizer adapter tests
 │   ├── test_parameter_registry.py    # Parameter registry and state_dict tests
 │   ├── test_policies.py              # Policy tests
@@ -117,5 +121,5 @@ mlx-baselines3/
 - **✅ SAC**: Fully implemented with stochastic actor, twin critics, automatic entropy tuning, target networks, and a working off-policy learn() loop
 - **✅ TD3**: Fully implemented with deterministic actor, twin critics, delayed policy updates, target policy smoothing
 - **✅ VecNormalize**: Complete observation/reward normalization wrapper with save/load support
+- **✅ Callbacks & Logging**: Complete callback system with BaseCallback, EvalCallback, CheckpointCallback, StopTrainingOnRewardThreshold, ProgressBarCallback; Multi-format logging (stdout, CSV, TensorBoard)
 - **☐ Examples**: No example scripts yet
-- **☐ Advanced Features**: Callbacks need completion

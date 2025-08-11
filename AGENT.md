@@ -107,7 +107,10 @@ mlx-baselines3/
 │   ├── test_torch_layers.py          # Neural network layer tests
 │   ├── test_vec_env.py               # VecEnv tests
 │   └── test_vec_normalize.py         # VecNormalize tests and env type assertions
-├── examples/                         # Usage examples (empty - TODO)
+├── examples/                         # Usage examples
+│   ├── train_cartpole_ppo.py         # PPO training example with CartPole-v1
+│   ├── train_cartpole_dqn.py         # DQN training example with CartPole-v1  
+│   └── train_pendulum_sac.py         # SAC training example with Pendulum-v1
 ├── notes/                            # Development documentation
 │   ├── initial_plan.md               # Original project plan
 │   ├── mlx-baselines3_spec.md        # Detailed technical specification
@@ -138,4 +141,4 @@ mlx-baselines3/
 - **✅ Schedules & Hyperparams**: Complete schedule system (constant, linear, piecewise, exponential, cosine) with string parsing, SB3 compatibility, and PPO integration for lr/clip_range/ent_coef; target_kl early stopping with proper epoch counting
 - **✅ Performance Optimizations**: JIT compilation framework with 18% improvement on core operations, optimized PPO implementation with float32 enforcement, functional loss computations, and comprehensive performance testing suite
 - **✅ Testing & CI**: Complete test suite with 429 tests, GitHub Actions CI workflow, reproducibility tests, integration tests, and comprehensive coverage of all algorithms and infrastructure
-- **☐ Examples**: No example scripts yet
+- **✅ Examples**: Complete example scripts with PPO/DQN/SAC training, evaluation, and command-line interfaces

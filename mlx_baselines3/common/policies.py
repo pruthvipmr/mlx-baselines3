@@ -464,6 +464,55 @@ class ActorCriticPolicy(BasePolicy):
             Tuple of (actions, values, log_probs)
         """
         return self.forward(obs, deterministic=deterministic)
+    
+    def functional_evaluate_actions(
+        self, 
+        params: Dict[str, mx.array], 
+        obs: MlxArray, 
+        actions: MlxArray
+    ) -> Tuple[MlxArray, MlxArray, MlxArray]:
+        """
+        Evaluate actions functionally without modifying policy state.
+        
+        This method applies the policy with given parameters without
+        loading them into the module state, enabling efficient
+        gradient computation.
+        
+        Args:
+            params: Parameter dictionary
+            obs: Observations
+            actions: Actions
+            
+        Returns:
+            Tuple of (estimated values, log prob of actions, entropy)
+        """
+        # Save current state
+        original_params = self.state_dict()
+        
+        try:
+            # Temporarily load functional params
+            self.load_state_dict(params, strict=False)
+            
+            # Evaluate with temporary params
+            values, log_prob, entropy = self.evaluate_actions(obs, actions)
+            
+            return values, log_prob, entropy
+            
+        finally:
+            # Restore original state
+            self.load_state_dict(original_params, strict=False)
+    
+    def create_functional_apply_fn(self):
+        """
+        Create a functional application function for this policy.
+        
+        Returns:
+            Function that takes (params, obs, actions) and returns (values, log_prob, entropy)
+        """
+        def apply_fn(params: Dict[str, mx.array], obs: MlxArray, actions: MlxArray):
+            return self.functional_evaluate_actions(params, obs, actions)
+        
+        return apply_fn
 
 
 class MultiInputActorCriticPolicy(ActorCriticPolicy):

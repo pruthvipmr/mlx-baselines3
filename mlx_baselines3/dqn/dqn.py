@@ -322,7 +322,7 @@ class DQN(OffPolicyAlgorithm):
                 )
 
         # Log training info
-        if len(q_losses) > 0 and hasattr(self, 'logger'):
+        if len(q_losses) > 0 and hasattr(self, 'logger') and self.logger is not None:
             self.logger.record("train/q_loss", safe_mean(q_losses))
             self.logger.record("train/exploration_rate", self._get_exploration_rate())
 

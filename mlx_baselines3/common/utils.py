@@ -101,20 +101,33 @@ def explained_variance(y_pred: mx.array, y_true: mx.array) -> float:
     return float(1 - mx.var(y_true - y_pred) / var_y)
 
 
-def safe_mean(arr: mx.array, axis: Optional[Union[int, Tuple[int, ...]]] = None) -> mx.array:
+def safe_mean(arr: Union[mx.array, np.ndarray, list], axis: Optional[Union[int, Tuple[int, ...]]] = None) -> Union[mx.array, float]:
     """
     Compute mean with protection against empty arrays.
-    
+
     Args:
-        arr: Input array
+        arr: Input array (MLX array, numpy array, or list)
         axis: Axis or axes along which to compute mean
-        
+
     Returns:
         Mean of array, or 0.0 if array is empty
     """
-    if arr.size == 0:
-        return mx.array(0.0)
-    return mx.mean(arr, axis=axis)
+    # Convert to numpy if it's a list or other type
+    if isinstance(arr, list):
+        arr = np.array(arr)
+    
+    # Handle empty arrays
+    if hasattr(arr, 'size') and arr.size == 0:
+        return 0.0
+    elif isinstance(arr, list) and len(arr) == 0:
+        return 0.0
+    
+    # Use appropriate mean function based on type
+    if isinstance(arr, mx.array):
+        return mx.mean(arr, axis=axis)
+    else:
+        # numpy array or similar
+        return float(np.mean(arr, axis=axis))
 
 
 def numpy_to_mlx(arr: np.ndarray) -> mx.array:

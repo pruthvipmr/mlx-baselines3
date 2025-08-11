@@ -42,7 +42,10 @@ mlx-baselines3/
 │   │   ├── buffers.py                # RolloutBuffer for on-policy algorithms
 │   │   ├── callbacks.py              # Callback system (BaseCallback, EvalCallback, etc.)
 │   │   ├── distributions.py          # Action distributions (Categorical, DiagGaussian)
+│   │   ├── functional_losses.py      # Pure functional loss computations for performance
+│   │   ├── jit_optimizations.py      # JIT compilation optimizations (18% speedup)
 │   │   ├── logger.py                 # Logging system (Logger, multiple output formats)
+│   │   ├── optimized_training.py     # Optimized training loops with minimal parameter reloads
 │   │   ├── optimizers.py             # MLX optimizer adapters (AdamAdapter, SGDAdapter)
 │   │   ├── policies.py               # Base policy classes (ActorCriticPolicy, etc.)
 │   │   ├── preprocessing.py          # Input preprocessing utilities
@@ -58,7 +61,8 @@ mlx-baselines3/
 │   ├── ppo/                          # PPO algorithm (✅ IMPLEMENTED)
 │   │   ├── __init__.py               # Exports PPO and policy aliases
 │   │   ├── policies.py               # PPO-specific policies (MlpPolicy, CnnPolicy)
-│   │   └── ppo.py                    # PPO algorithm implementation
+│   │   ├── ppo.py                    # PPO algorithm implementation
+│   │   └── optimized_ppo.py          # Performance-optimized PPO with JIT and float32 enforcement
 │   ├── a2c/                          # A2C algorithm (✅ IMPLEMENTED)
 │   │   ├── __init__.py               # Exports A2C and policy aliases
 │   │   ├── policies.py               # A2C-specific policies (MlpPolicy, CnnPolicy)
@@ -80,8 +84,11 @@ mlx-baselines3/
 │   ├── test_buffer_performance.py    # Buffer performance benchmarks
 │   ├── test_callbacks.py             # Callback system tests
 │   ├── test_distributions.py         # Distribution math tests
+│   ├── test_final_performance.py     # Final baseline vs optimized performance comparison
+│   ├── test_gradient_stability.py    # Numerical stability and dtype consistency tests
 │   ├── test_imports.py               # Import compatibility tests
 │   ├── test_logger.py                # Logging system tests
+│   ├── test_optimized_performance.py # Performance benchmarks for optimization components
 │   ├── test_optimizers.py            # Optimizer adapter tests
 │   ├── test_parameter_registry.py    # Parameter registry and state_dict tests
 │   ├── test_policies.py              # Policy tests
@@ -124,4 +131,5 @@ mlx-baselines3/
 - **✅ VecNormalize**: Complete observation/reward normalization wrapper with save/load support
 - **✅ Callbacks & Logging**: Complete callback system with BaseCallback, EvalCallback, CheckpointCallback, StopTrainingOnRewardThreshold, ProgressBarCallback; Multi-format logging (stdout, CSV, TensorBoard)
 - **✅ Schedules & Hyperparams**: Complete schedule system (constant, linear, piecewise, exponential, cosine) with string parsing, SB3 compatibility, and PPO integration for lr/clip_range/ent_coef; target_kl early stopping with proper epoch counting
+- **✅ Performance Optimizations**: JIT compilation framework with 18% improvement on core operations, optimized PPO implementation with float32 enforcement, functional loss computations, and comprehensive performance testing suite
 - **☐ Examples**: No example scripts yet

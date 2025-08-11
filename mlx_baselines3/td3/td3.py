@@ -264,7 +264,7 @@ class TD3(OffPolicyAlgorithm):
         self._n_updates += gradient_steps
 
         # Store training stats (optional logger)
-        if hasattr(self, "logger"):
+        if hasattr(self, "logger") and self.logger is not None:
             self.logger.record("train/n_updates", self._n_updates, exclude="tensorboard")
             if len(actor_losses) > 0:
                 self.logger.record("train/actor_loss", safe_mean(actor_losses))

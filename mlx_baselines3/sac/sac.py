@@ -314,7 +314,7 @@ class SAC(OffPolicyAlgorithm):
         self._n_updates += gradient_steps
 
         # Store training stats (optional logger)
-        if hasattr(self, "logger"):
+        if hasattr(self, "logger") and self.logger is not None:
             self.logger.record("train/n_updates", self._n_updates, exclude="tensorboard")
             self.logger.record("train/actor_loss", safe_mean(actor_losses))
             self.logger.record("train/critic_loss", safe_mean(critic_losses))

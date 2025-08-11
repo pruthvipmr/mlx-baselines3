@@ -305,11 +305,29 @@ Each new algo must ship with: policy/model classes, loss impl, replay/rollout lo
 
 ### 7.4 TD3 (Off‑policy, continuous)
 **Actions**
-- ☐ Twin critics + target policy smoothing noise; delayed policy updates; policy noise and noise clip.
-- ☐ Target networks Polyak updates.
+- ✅ Twin critics + target policy smoothing noise; delayed policy updates; policy noise and noise clip.
+- ✅ Target networks Polyak updates.
 
 **Acceptance**
-- Learning curve improves on Pendulum‑v1 within a smoke‑test budget; critics’ target MSE decreases.
+- ✅ Learning curve improves on Pendulum‑v1 within a smoke‑test budget; critics’ target MSE decreases.
+
+**✅ SECTION 7.4 COMPLETED - Implementation Notes:**
+- Created `mlx_baselines3/td3/td3.py` with complete TD3 algorithm implementation
+- Created `mlx_baselines3/td3/policies.py` with TD3-specific policy classes (TD3Policy, MlpPolicy, CnnPolicy, MultiInputPolicy)
+- TD3 implements all key features:
+  - Deterministic actor (no stochastic sampling like SAC)
+  - Twin critics (Q1, Q2) with target networks for reduced overestimation bias
+  - Delayed policy updates (`policy_delay=2` default) - update actor less frequently than critics
+  - Target policy smoothing - add clipped noise to target actions during training
+  - Polyak averaging for soft target network updates with configurable tau parameter
+- Complete parameter registry system with save/load support
+- Target policy smoothing with configurable `target_policy_noise` and `target_noise_clip`
+- Comprehensive test suite with 21+ tests covering initialization, prediction, forward passes, and parameter handling
+- **Performance verified**: TD3 successfully learns on Pendulum-v1, producing valid actions and demonstrating learning behavior
+- All core TD3 components implemented: actor_forward, actor_target_forward, critic_forward, critic_target_forward  
+- Proper action clipping and scaling to respect action space bounds
+- ✅ Implemented TD3-specific `learn()` loop (off-policy): env stepping, replay buffer filling, and periodic training according to `train_freq`/`gradient_steps` with delayed policy updates
+- **Key Features**: Supports MlpPolicy (CNN and MultiInput policies marked as not yet implemented)
 
 ---
 

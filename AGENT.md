@@ -68,8 +68,10 @@ mlx-baselines3/
 │   │   ├── __init__.py               # Exports SAC and policy aliases
 │   │   ├── policies.py               # SAC-specific policies (MlpPolicy, CnnPolicy, MultiInputPolicy)
 │   │   └── sac.py                    # SAC algorithm implementation
-│   └── td3/                          # TD3 algorithm (☐ TODO)
-│       └── __init__.py               # Placeholder
+│   └── td3/                          # TD3 algorithm (✅ IMPLEMENTED)
+│       ├── __init__.py               # Exports TD3 and policy aliases
+│       ├── policies.py               # TD3-specific policies (TD3Policy, MlpPolicy, CnnPolicy)
+│       └── td3.py                    # TD3 algorithm implementation
 ├── tests/                            # Test suite
 │   ├── test_buffers.py               # Buffer functionality tests
 │   ├── test_buffer_performance.py    # Buffer performance benchmarks
@@ -83,6 +85,7 @@ mlx-baselines3/
 │   ├── test_a2c.py                   # A2C algorithm tests
 │   ├── test_dqn.py                   # DQN algorithm tests
 │   ├── test_sac.py                   # SAC algorithm tests
+│   ├── test_td3.py                   # TD3 algorithm tests
 │   ├── test_preprocessing.py         # Preprocessing tests
 │   ├── test_save_load_api_parity.py  # Save/load API parity tests (env_id, optimizer state)
 │   ├── test_save_load_roundtrip.py   # Save/load round-trip tests
@@ -110,6 +113,6 @@ mlx-baselines3/
 - **✅ Buffer System**: RolloutBuffer and ReplayBuffer with SB3 compatibility, >3.6M samples/s throughput
 - **✅ DQN**: Fully implemented with Q-networks, epsilon-greedy exploration, target networks, Huber loss
 - **✅ SAC**: Fully implemented with stochastic actor, twin critics, automatic entropy tuning, target networks, and a working off-policy learn() loop
-- **☐ TD3**: Placeholder classes that raise NotImplementedError
+- **✅ TD3**: Fully implemented with deterministic actor, twin critics, delayed policy updates, target policy smoothing
 - **☐ Examples**: No example scripts yet
 - **☐ Advanced Features**: VecNormalize, callbacks need completion

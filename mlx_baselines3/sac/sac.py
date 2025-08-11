@@ -523,13 +523,9 @@ class SAC(OffPolicyAlgorithm):
             self._episode_num = 0
         self._total_timesteps = total_timesteps
         
-        # Simple callback shim
-        if callback is None:
-            from types import SimpleNamespace
-            callback = SimpleNamespace()
-            callback.on_training_start = lambda *args, **kwargs: None
-            callback.on_step = lambda *args, **kwargs: True
-            callback.on_training_end = lambda *args, **kwargs: None
+        # Convert callback to proper format
+        from mlx_baselines3.common.callbacks import convert_callback
+        callback = convert_callback(callback)
         
         # Initial reset
         if not hasattr(self, "_last_obs") or self._last_obs is None:

@@ -323,7 +323,7 @@ class VecNormalize(VecEnvWrapper):
         with open(path, "wb") as f:
             pickle.dump(state, f)
             
-    def load(self, path: str) -> None:
+    def load_state(self, path: str) -> None:
         """
         Load normalization parameters from file.
         
@@ -344,6 +344,38 @@ class VecNormalize(VecEnvWrapper):
         self.gamma = state["gamma"]
         self.epsilon = state["epsilon"]
         self.returns = state.get("returns", np.zeros(self.num_envs))
+    
+    @classmethod
+    def load(cls, path: str, venv: VecEnv) -> "VecNormalize":
+        """
+        Load VecNormalize from file and wrap the given environment.
+        
+        Args:
+            path: Path to the saved parameters
+            venv: Environment to wrap
+            
+        Returns:
+            New VecNormalize instance with loaded parameters
+        """
+        with open(path, "rb") as f:
+            state = pickle.load(f)
+        
+        # Create new instance
+        vec_normalize = cls(venv)
+        
+        # Restore state
+        vec_normalize.obs_rms = state["obs_rms"]
+        vec_normalize.ret_rms = state["ret_rms"]
+        vec_normalize.training = state["training"]
+        vec_normalize.norm_obs = state["norm_obs"]
+        vec_normalize.norm_reward = state["norm_reward"]
+        vec_normalize.clip_obs = state["clip_obs"]
+        vec_normalize.clip_reward = state["clip_reward"]
+        vec_normalize.gamma = state["gamma"]
+        vec_normalize.epsilon = state["epsilon"]
+        vec_normalize.returns = state.get("returns", np.zeros(vec_normalize.num_envs))
+        
+        return vec_normalize
         
     def get_attr(self, attr_name: str, indices: Optional[List[int]] = None) -> List[Any]:
         """

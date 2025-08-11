@@ -217,7 +217,9 @@ class DQN(OffPolicyAlgorithm):
         progress_bar: bool = False,
     ):
         """
-        Learn using DQN algorithm.
+        Run the DQN off-policy training loop.
+        This fills the replay buffer with environment interactions and performs
+        gradient updates according to train_freq/gradient_steps.
 
         Args:
             total_timesteps: Total number of samples to train on
@@ -230,14 +232,93 @@ class DQN(OffPolicyAlgorithm):
         Returns:
             Trained model
         """
-        return super().learn(
-            total_timesteps=total_timesteps,
-            callback=callback,
-            log_interval=log_interval,
-            tb_log_name=tb_log_name,
-            reset_num_timesteps=reset_num_timesteps,
-            progress_bar=progress_bar,
-        )
+        # Reset counters
+        if reset_num_timesteps:
+            self.num_timesteps = 0
+            self._episode_num = 0
+        self._total_timesteps = total_timesteps
+        
+        # Simple callback shim
+        if callback is None:
+            from types import SimpleNamespace
+            callback = SimpleNamespace()
+            callback.on_training_start = lambda *args, **kwargs: None
+            callback.on_step = lambda *args, **kwargs: True
+            callback.on_training_end = lambda *args, **kwargs: None
+        
+        # Initial reset
+        if not hasattr(self, "_last_obs") or self._last_obs is None:
+            reset_out = self.env.reset()
+            if isinstance(reset_out, tuple):
+                obs0, _ = reset_out
+            else:
+                obs0 = reset_out
+            # Ensure batch dim for non-Vec envs
+            if not hasattr(self.env, 'num_envs') or self.n_envs == 1:
+                self._last_obs = np.expand_dims(obs0, 0)
+            else:
+                self._last_obs = obs0
+        if not hasattr(self, "_last_episode_starts"):
+            self._last_episode_starts = np.ones((self.n_envs,), dtype=bool)
+        
+        callback.on_training_start(locals(), globals())
+        
+        timesteps_since_last_train = 0
+        
+        while self.num_timesteps < total_timesteps:
+            # Sample action(s) with epsilon-greedy exploration
+            actions = self._sample_action(self.learning_starts, n_envs=self.n_envs)
+            
+            # Step the environment (handle non-Vec single env API)
+            if self.n_envs == 1 and not hasattr(self.env, 'num_envs'):
+                step_action = actions if np.asarray(actions).ndim == 0 else actions[0]
+                obs_, reward, terminated, truncated, info = self.env.step(step_action)
+                done = np.array([terminated or truncated])
+                new_obs = np.expand_dims(obs_, 0)
+                rewards = np.expand_dims(np.array([reward], dtype=np.float32), 0)
+                infos = [info]
+            else:
+                new_obs, rewards, done, infos = self.env.step(actions)
+                done = np.array(done)
+            
+            # Ensure batch dimensions for replay buffer
+            if not isinstance(new_obs, dict) and new_obs.ndim == len(self.observation_space.shape):
+                new_obs = np.expand_dims(new_obs, 0)
+            if not isinstance(self._last_obs, dict) and self._last_obs is not None and self._last_obs.ndim == len(self.observation_space.shape):
+                last_obs_batched = np.expand_dims(self._last_obs, 0)
+            else:
+                last_obs_batched = self._last_obs
+            if np.asarray(rewards).ndim == 1:
+                rewards = np.expand_dims(rewards, 0)
+            if np.asarray(actions).ndim == 0:
+                actions_batched = np.expand_dims(actions, 0)
+            else:
+                actions_batched = actions
+            
+            # Store transition in replay buffer
+            self.replay_buffer.add(last_obs_batched, new_obs, actions_batched, rewards, done, infos)
+            
+            self._last_obs = new_obs
+            self._last_episode_starts = done
+            
+            # Increment timesteps
+            self.num_timesteps += self.n_envs
+            timesteps_since_last_train += self.n_envs
+            
+            # Update learning progress
+            self._update_current_progress_remaining(self.num_timesteps, total_timesteps)
+            
+            # Train according to frequency
+            if self.num_timesteps >= self.learning_starts and timesteps_since_last_train >= int(self.train_freq):
+                self.train(self.gradient_steps, batch_size=self.batch_size)
+                timesteps_since_last_train = 0
+            
+            # Callback step
+            if callback is not None and not callback.on_step():
+                break
+        
+        callback.on_training_end()
+        return self
 
     def train(self, gradient_steps: int, batch_size: int = 64) -> None:
         """

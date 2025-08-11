@@ -194,7 +194,7 @@ class TestCheckpointCallback:
             
             # Simulate timesteps and trigger save
             model.num_timesteps = 100
-            callback.n_calls = 100
+            callback.n_calls = 99  # Will be incremented to 100 in on_step()
             result = callback.on_step()
             
             assert result is True
@@ -258,7 +258,7 @@ class TestEvalCallback:
             callback.init_callback(model)
             
             # Trigger evaluation
-            callback.n_calls = 10
+            callback.n_calls = 9  # Will be incremented to 10 in on_step()
             result = callback.on_step()
             
             assert result is True

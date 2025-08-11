@@ -468,21 +468,40 @@ class SACPolicy(BasePolicy):
         """
         self.set_training_mode(False)
         
-        if isinstance(observation, dict):
-            # Handle dict observations
-            obs_tensor = {}
-            for key, obs in observation.items():
-                obs_tensor[key] = mx.array(obs).reshape(1, -1)  # Add batch dimension
+        from ..common.utils import obs_as_mlx
+        
+        # Convert to MLX arrays while preserving shape
+        obs_tensor = obs_as_mlx(observation)
+        
+        # Add batch dimension only if observation is not already batched
+        if isinstance(obs_tensor, dict):
+            # For dict observations, check if we need to add batch dimension
+            obs_batch = {}
+            for key, obs in obs_tensor.items():
+                if obs.ndim == len(self.observation_space[key].shape):
+                    obs_batch[key] = obs[None]  # Add batch dimension
+                else:
+                    obs_batch[key] = obs  # Already batched
+            obs_tensor = obs_batch
         else:
-            obs_tensor = mx.array(observation).reshape(1, -1)  # Add batch dimension
+            # For array observations, check if we need to add batch dimension  
+            if obs_tensor.ndim == len(self.observation_space.shape):
+                obs_tensor = obs_tensor[None]  # Add batch dimension
+            # else: already batched, use as-is
         
         actions, _, _ = self(obs_tensor, deterministic=deterministic)
         
         # Convert back to numpy for compatibility and remove batch dimension if single observation
         if isinstance(actions, mx.array):
             actions = np.array(actions)
-            if actions.shape[0] == 1 and not isinstance(observation, dict):
+            # Remove batch dimension only if original observation was not batched
+            if isinstance(observation, np.ndarray) and observation.ndim == len(self.observation_space.shape):
                 actions = actions.squeeze(0)
+            elif isinstance(observation, dict):
+                # For dict observations, check if original was not batched
+                first_key = next(iter(observation.keys()))
+                if observation[first_key].ndim == len(self.observation_space[first_key].shape):
+                    actions = actions.squeeze(0)
         
         return actions, None
 

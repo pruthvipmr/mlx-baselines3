@@ -324,7 +324,7 @@ class EvalCallback(BaseCallback):
                 print(f"Episode length: {mean_ep_length:.2f} +/- {np.std(episode_lengths):.2f}")
 
             # Add to current Logger
-            if hasattr(self.model, 'logger'):
+            if hasattr(self.model, 'logger') and self.model.logger is not None:
                 self.model.logger.record("eval/mean_reward", float(mean_reward))
                 self.model.logger.record("eval/mean_ep_length", mean_ep_length)
 

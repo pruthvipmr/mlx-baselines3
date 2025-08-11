@@ -79,7 +79,7 @@ mlx-baselines3/
 │       ├── __init__.py               # Exports TD3 and policy aliases
 │       ├── policies.py               # TD3-specific policies (TD3Policy, MlpPolicy, CnnPolicy)
 │       └── td3.py                    # TD3 algorithm implementation
-├── tests/                            # Test suite
+├── tests/                            # Test suite (429 tests total)
 │   ├── test_buffers.py               # Buffer functionality tests
 │   ├── test_buffer_performance.py    # Buffer performance benchmarks
 │   ├── test_callbacks.py             # Callback system tests
@@ -87,6 +87,7 @@ mlx-baselines3/
 │   ├── test_final_performance.py     # Final baseline vs optimized performance comparison
 │   ├── test_gradient_stability.py    # Numerical stability and dtype consistency tests
 │   ├── test_imports.py               # Import compatibility tests
+│   ├── test_integration.py           # End-to-end integration tests (2k-5k timesteps)
 │   ├── test_logger.py                # Logging system tests
 │   ├── test_optimized_performance.py # Performance benchmarks for optimization components
 │   ├── test_optimizers.py            # Optimizer adapter tests
@@ -98,6 +99,7 @@ mlx-baselines3/
 │   ├── test_dqn.py                   # DQN algorithm tests
 │   ├── test_sac.py                   # SAC algorithm tests
 │   ├── test_td3.py                   # TD3 algorithm tests
+│   ├── test_reproducibility.py       # Seeding and reproducibility tests
 │   ├── test_schedules.py             # Schedule functionality tests
 │   ├── test_preprocessing.py         # Preprocessing tests
 │   ├── test_save_load_api_parity.py  # Save/load API parity tests (env_id, optimizer state)
@@ -110,6 +112,9 @@ mlx-baselines3/
 │   ├── initial_plan.md               # Original project plan
 │   ├── mlx-baselines3_spec.md        # Detailed technical specification
 │   └── phase4_bugs.md                # Known issues and fixes
+├── .github/                          # GitHub Actions CI/CD
+│   └── workflows/
+│       └── test.yml                  # CI workflow (macOS, Python 3.10/3.11)
 ├── pyproject.toml                    # Project configuration and dependencies
 ├── README.md                         # Project documentation
 ├── AGENT.md                          # This file - development guide
@@ -132,4 +137,5 @@ mlx-baselines3/
 - **✅ Callbacks & Logging**: Complete callback system with BaseCallback, EvalCallback, CheckpointCallback, StopTrainingOnRewardThreshold, ProgressBarCallback; Multi-format logging (stdout, CSV, TensorBoard)
 - **✅ Schedules & Hyperparams**: Complete schedule system (constant, linear, piecewise, exponential, cosine) with string parsing, SB3 compatibility, and PPO integration for lr/clip_range/ent_coef; target_kl early stopping with proper epoch counting
 - **✅ Performance Optimizations**: JIT compilation framework with 18% improvement on core operations, optimized PPO implementation with float32 enforcement, functional loss computations, and comprehensive performance testing suite
+- **✅ Testing & CI**: Complete test suite with 429 tests, GitHub Actions CI workflow, reproducibility tests, integration tests, and comprehensive coverage of all algorithms and infrastructure
 - **☐ Examples**: No example scripts yet

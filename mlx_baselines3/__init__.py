@@ -12,6 +12,9 @@ from mlx_baselines3.td3 import TD3
 # Policy aliases - available for implemented algorithms
 from mlx_baselines3.ppo import MlpPolicy, CnnPolicy, MultiInputPolicy
 
+# VecEnv utilities
+from mlx_baselines3.common.vec_env import VecNormalize, DummyVecEnv, make_vec_env
+
 
 def show_versions():
     """Show versions of MLX Baselines3 and its dependencies."""
@@ -50,6 +53,8 @@ __all__ = [
     "PPO", "A2C", "DQN", "SAC", "TD3",
     # Policy aliases
     "MlpPolicy", "CnnPolicy", "MultiInputPolicy",
+    # VecEnv utilities
+    "VecNormalize", "DummyVecEnv", "make_vec_env",
     # Utilities
     "show_versions",
 ]

@@ -309,53 +309,20 @@ Each new algo must ship with: policy/model classes, loss impl, replay/rollout lo
 - ✅ Target networks Polyak updates.
 
 **Acceptance**
-- ✅ Learning curve improves on Pendulum‑v1 within a smoke‑test budget; critics’ target MSE decreases.
-
-**✅ SECTION 7.4 COMPLETED - Implementation Notes:**
-- Created `mlx_baselines3/td3/td3.py` with complete TD3 algorithm implementation
-- Created `mlx_baselines3/td3/policies.py` with TD3-specific policy classes (TD3Policy, MlpPolicy, CnnPolicy, MultiInputPolicy)
-- TD3 implements all key features:
-  - Deterministic actor (no stochastic sampling like SAC)
-  - Twin critics (Q1, Q2) with target networks for reduced overestimation bias
-  - Delayed policy updates (`policy_delay=2` default) - update actor less frequently than critics
-  - Target policy smoothing - add clipped noise to target actions during training
-  - Polyak averaging for soft target network updates with configurable tau parameter
-- Complete parameter registry system with save/load support
-- Target policy smoothing with configurable `target_policy_noise` and `target_noise_clip`
-- Comprehensive test suite with 21+ tests covering initialization, prediction, forward passes, and parameter handling
-- **Performance verified**: TD3 successfully learns on Pendulum-v1, producing valid actions and demonstrating learning behavior
-- All core TD3 components implemented: actor_forward, actor_target_forward, critic_forward, critic_target_forward  
-- Proper action clipping and scaling to respect action space bounds
-- ✅ Implemented TD3-specific `learn()` loop (off-policy): env stepping, replay buffer filling, and periodic training according to `train_freq`/`gradient_steps` with delayed policy updates
-- **Key Features**: Supports MlpPolicy (CNN and MultiInput policies marked as not yet implemented)
+- Learning curve improves on Pendulum‑v1 within a smoke‑test budget; critics’ target MSE decreases.
 
 ---
 
 ## 8) Env & VecEnv Compatibility
 
 **Actions**
-- ✅ `DummyVecEnv` (already used) parity: assert for PPO; allow non‑Vec for off‑policy.
-- ✅ `VecNormalize`: running mean/std for obs and returns (seeded, saveable).  
-- ✅ `make_vec_env` helper for quick creation from env_id and n_envs.
+- ☐ `DummyVecEnv` (already used) parity: assert for PPO; allow non‑Vec for off‑policy.
+- ☐ `VecNormalize`: running mean/std for obs and returns (seeded, saveable).  
+- ☐ `make_vec_env` helper for quick creation from env_id and n_envs.
 
 **Acceptance**
-- ✅ `VecNormalize` round‑trip save/load preserves normalization stats.
-- ✅ PPO asserts on non‑vectorized env; DQN/SAC/TD3 accept single env without complaint.
-
-**✅ SECTION 8 COMPLETED - Implementation Notes:**
-- Implemented complete `VecNormalize` wrapper with running mean/std normalization for observations and returns
-- Supports both array and dictionary observation spaces with proper shape handling
-- Training mode toggle to enable/disable statistics updates during environment interactions
-- Configurable clipping bounds for normalized observations and rewards (default: ±10.0)
-- Gamma-discounted return estimation for reward normalization with proper episode boundary handling
-- Complete save/load functionality with pickle serialization of all normalization statistics
-- Numerically stable RunningMeanStd implementation using Welford's algorithm
-- PPO and A2C properly assert for vectorized environments (existing functionality confirmed)
-- Off-policy algorithms (DQN, SAC, TD3) accept both single and vectorized environments
-- `make_vec_env` utility function already implemented with full SB3 compatibility
-- Added comprehensive test suite with 22 tests covering all functionality including edge cases
-- Successfully integrated with existing algorithms and confirmed working VecNormalize + PPO combination
-- All acceptance criteria verified through extensive testing
+- `VecNormalize` round‑trip save/load preserves normalization stats.
+- PPO asserts on non‑vectorized env; DQN/SAC/TD3 accept single env without complaint.
 
 ---
 
@@ -466,7 +433,7 @@ Each new algo must ship with: policy/model classes, loss impl, replay/rollout lo
 - ☐ `TD3` module + tests + example
 - ☐ Distributions: MultiDiscrete, MultiBinary
 - ☐ ReplayBuffer (and optional Prioritized later)
-- ✅ VecNormalize + save/load
+- ☐ VecNormalize + save/load
 - ☐ Optimizer adapter with persisted state
 - ☐ Complete save/load (including env_id, optimizer state, targets)
 - ☐ CI workflow (macOS), ≥ 95% unit coverage on core components

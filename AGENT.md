@@ -51,7 +51,8 @@ mlx-baselines3/
 │   │   └── vec_env/                  # Vectorized environment support
 │   │       ├── __init__.py
 │   │       ├── base_vec_env.py       # VecEnv base class
-│   │       └── dummy_vec_env.py      # DummyVecEnv implementation
+│   │       ├── dummy_vec_env.py      # DummyVecEnv implementation, make_vec_env utility
+│   │       └── vec_normalize.py      # VecNormalize wrapper with running mean/std
 │   ├── ppo/                          # PPO algorithm (✅ IMPLEMENTED)
 │   │   ├── __init__.py               # Exports PPO and policy aliases
 │   │   ├── policies.py               # PPO-specific policies (MlpPolicy, CnnPolicy)
@@ -90,7 +91,8 @@ mlx-baselines3/
 │   ├── test_save_load_api_parity.py  # Save/load API parity tests (env_id, optimizer state)
 │   ├── test_save_load_roundtrip.py   # Save/load round-trip tests
 │   ├── test_torch_layers.py          # Neural network layer tests
-│   └── test_vec_env.py               # VecEnv tests
+│   ├── test_vec_env.py               # VecEnv tests
+│   └── test_vec_normalize.py         # VecNormalize tests and env type assertions
 ├── examples/                         # Usage examples (empty - TODO)
 ├── notes/                            # Development documentation
 │   ├── initial_plan.md               # Original project plan
@@ -114,5 +116,6 @@ mlx-baselines3/
 - **✅ DQN**: Fully implemented with Q-networks, epsilon-greedy exploration, target networks, Huber loss
 - **✅ SAC**: Fully implemented with stochastic actor, twin critics, automatic entropy tuning, target networks, and a working off-policy learn() loop
 - **✅ TD3**: Fully implemented with deterministic actor, twin critics, delayed policy updates, target policy smoothing
+- **✅ VecNormalize**: Complete observation/reward normalization wrapper with save/load support
 - **☐ Examples**: No example scripts yet
-- **☐ Advanced Features**: VecNormalize, callbacks need completion
+- **☐ Advanced Features**: Callbacks need completion

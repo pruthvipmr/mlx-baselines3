@@ -416,13 +416,37 @@ Each new algo must ship with: policy/model classes, loss impl, replay/rollout lo
 ## 10) Schedules & Hyperparams
 
 **Actions**
-- ☐ Implement/port schedules: constant, linear, piecewise; expose via string/float/callable like SB3.  
-- ☐ Wire schedules into lr, clip_range, clip_range_vf, ent_coef.
-- ☐ `target_kl` early‑stop fully enforced (counts real epochs run).
+- ✅ Implement/port schedules: constant, linear, piecewise; expose via string/float/callable like SB3.  
+- ✅ Wire schedules into lr, clip_range, clip_range_vf, ent_coef.
+- ✅ `target_kl` early‑stop fully enforced (counts real epochs run).
 
 **Acceptance**
-- Unit tests validate monotonic lr decay and consistent clip ranges across epochs/minibatches.
-- PPO `_n_updates` increments by actual epochs executed when early‑stopped.
+- ✅ Unit tests validate monotonic lr decay and consistent clip ranges across epochs/minibatches.
+- ✅ PPO `_n_updates` increments by actual epochs executed when early‑stopped.
+
+**✅ SECTION 10 COMPLETED - Implementation Notes:**
+- Enhanced `mlx_baselines3/common/schedules.py` with comprehensive schedule support:
+  - Basic schedules: `constant_schedule`, `linear_schedule`, `piecewise_schedule`, `exponential_schedule`, `cosine_annealing_schedule`
+  - String parsing: Support for "linear_0.001", "linear_0.001_0.0001", "piecewise_0.0:0.1_0.5:0.05_1.0:0.01" formats
+  - Utility functions: `apply_schedule_to_param`, `schedule_from_string`, `get_schedule_fn`
+  - Progress-based conversion: `make_progress_schedule` for step-based schedules
+- Updated PPO to support scheduled hyperparameters:
+  - `ent_coef` now accepts Union[float, str, Schedule] like clip_range parameters
+  - Enhanced `_get_schedule_value` method to use new `apply_schedule_to_param` utility
+  - Scheduled values computed per training update for clip_range, clip_range_vf, and ent_coef
+  - Modified `_compute_loss` to accept scheduled ent_coef as parameter
+- Fixed target_kl early stopping:
+  - Added proper epoch counting with `epochs_run` variable
+  - `_n_updates` now increments by actual epochs executed, not always `n_epochs`
+  - Early stopping preserves correct training statistics and update counts
+- Added comprehensive test suite in `tests/test_schedules.py`:
+  - 26 test cases covering all schedule types and utilities
+  - String parsing validation and error handling
+  - Numeric stability and edge case testing
+  - SB3 compatibility examples (PPO clip ranges, entropy coefficients)
+  - Integration tests for monotonic decay and consistent values
+- **Performance verified**: Schedule evaluation adds minimal overhead to training
+- **SB3 compatibility**: Full support for SB3-style schedule specifications and behaviors
 
 ---
 

@@ -29,6 +29,7 @@ from mlx_baselines3.common.optimizers import (
     compute_loss_and_grads,
     OptimizerState
 )
+from mlx_baselines3.common.schedules import apply_schedule_to_param
 from mlx_baselines3.common.schedules import get_schedule_fn, make_progress_schedule
 
 
@@ -71,7 +72,7 @@ class PPO(OnPolicyAlgorithm):
         gae_lambda: float = 0.95,
         clip_range: Union[float, Schedule] = 0.2,
         clip_range_vf: Optional[Union[float, Schedule]] = None,
-        ent_coef: float = 0.0,
+        ent_coef: Union[float, str, Schedule] = 0.0,
         vf_coef: float = 0.5,
         max_grad_norm: float = 0.5,
         target_kl: Optional[float] = None,
@@ -210,11 +211,9 @@ class PPO(OnPolicyAlgorithm):
             # Load policy parameters
             self.policy.load_state_dict(params["policy_parameters"], strict=exact_match)
         
-    def _get_schedule_value(self, schedule: Union[float, Schedule]) -> float:
+    def _get_schedule_value(self, schedule: Union[float, str, Schedule]) -> float:
         """Get current value from schedule or return constant."""
-        if callable(schedule):
-            return schedule(self._current_progress_remaining)
-        return schedule
+        return apply_schedule_to_param(schedule, 1.0 - self._current_progress_remaining)
         
     def collect_rollouts(
         self,
@@ -295,9 +294,10 @@ class PPO(OnPolicyAlgorithm):
         # Update optimizer learning rate
         self._update_learning_rate(self.policy.optimizer)
         
-        # Get current clip and value function clip ranges
+        # Get current clip ranges and entropy coefficient
         clip_range = self._get_schedule_value(self.clip_range)
         clip_range_vf = self._get_schedule_value(self.clip_range_vf) if self.clip_range_vf is not None else None
+        ent_coef = self._get_schedule_value(self.ent_coef)
         
         entropy_losses = []
         pg_losses = []
@@ -305,12 +305,14 @@ class PPO(OnPolicyAlgorithm):
         clip_fractions = []
         
         continue_training = True
+        epochs_run = 0
         
         # Initialize a flat parameter dict for functional updates
         params = self.policy.state_dict()
         
         # Train for n_epochs
         for epoch in range(self.n_epochs):
+            epochs_run = epoch + 1
             approx_kl_divs = []
             
             # Do a complete pass on the rollout buffer
@@ -321,7 +323,7 @@ class PPO(OnPolicyAlgorithm):
                 def loss_fn(p):
                     # Load params into policy for forward computations
                     self.policy.load_state_dict(p, strict=False)
-                    return self._compute_loss(rollout_data, self.policy, clip_range, clip_range_vf)
+                    return self._compute_loss(rollout_data, self.policy, clip_range, clip_range_vf, ent_coef)
                 
                 # Compute loss and gradients using centralized helper
                 loss_val, grads = compute_loss_and_grads(loss_fn, params)
@@ -412,7 +414,7 @@ class PPO(OnPolicyAlgorithm):
                 continue_training = False
                 break
                 
-        self._n_updates += self.n_epochs
+        self._n_updates += epochs_run
         explained_var = explained_variance(mx.array(self.rollout_buffer.values.flatten()), mx.array(self.rollout_buffer.returns.flatten()))
         
         # Log training metrics
@@ -425,7 +427,7 @@ class PPO(OnPolicyAlgorithm):
             if approx_kl_divs:
                 print(f"KL divergence: {np.mean(approx_kl_divs):.3f}")
                 
-    def _compute_loss(self, rollout_data: Dict[str, MlxArray], model, clip_range: float, clip_range_vf: Optional[float]) -> MlxArray:
+    def _compute_loss(self, rollout_data: Dict[str, MlxArray], model, clip_range: float, clip_range_vf: Optional[float], ent_coef: float) -> MlxArray:
         """Compute the total loss for PPO."""
         actions = rollout_data["actions"]
         
@@ -461,7 +463,7 @@ class PPO(OnPolicyAlgorithm):
         entropy_loss = -mx.mean(entropy) if entropy is not None else 0.0
         
         # Total loss
-        return policy_loss + self.ent_coef * entropy_loss + self.vf_coef * value_loss
+        return policy_loss + ent_coef * entropy_loss + self.vf_coef * value_loss
         
 
         

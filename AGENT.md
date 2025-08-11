@@ -91,6 +91,7 @@ mlx-baselines3/
 │   ├── test_dqn.py                   # DQN algorithm tests
 │   ├── test_sac.py                   # SAC algorithm tests
 │   ├── test_td3.py                   # TD3 algorithm tests
+│   ├── test_schedules.py             # Schedule functionality tests
 │   ├── test_preprocessing.py         # Preprocessing tests
 │   ├── test_save_load_api_parity.py  # Save/load API parity tests (env_id, optimizer state)
 │   ├── test_save_load_roundtrip.py   # Save/load round-trip tests
@@ -122,4 +123,5 @@ mlx-baselines3/
 - **✅ TD3**: Fully implemented with deterministic actor, twin critics, delayed policy updates, target policy smoothing
 - **✅ VecNormalize**: Complete observation/reward normalization wrapper with save/load support
 - **✅ Callbacks & Logging**: Complete callback system with BaseCallback, EvalCallback, CheckpointCallback, StopTrainingOnRewardThreshold, ProgressBarCallback; Multi-format logging (stdout, CSV, TensorBoard)
+- **✅ Schedules & Hyperparams**: Complete schedule system (constant, linear, piecewise, exponential, cosine) with string parsing, SB3 compatibility, and PPO integration for lr/clip_range/ent_coef; target_kl early stopping with proper epoch counting
 - **☐ Examples**: No example scripts yet

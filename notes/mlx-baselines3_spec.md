@@ -1,8 +1,8 @@
 
 # MLX‑Baselines3: Technical Spec & TODO (Drop‑in SB3 Replacement)
 
-**Owner:** @pruthvipmr  
-**Purpose:** Precise engineering plan for completing a Stable‑Baselines3‑compatible RL library on Apple’s MLX.  
+**Owner:** @pruthvipmr
+**Purpose:** Precise engineering plan for completing a Stable‑Baselines3‑compatible RL library on Apple’s MLX.
 **Output:** A library that mirrors SB3’s public API and behavior where feasible, with correct training, save/load, and tests.
 
 ---
@@ -19,11 +19,11 @@
 - Perfect performance tuning/JIT fusion beyond low‑hanging fruit.
 
 **Target minimal algo set for v0.1.0**
-- ✅ `PPO` (present, keep hardening)
-- ✅ `A2C` (training works, save/load has known issue)
-- ☐ `DQN`
-- ☐ `SAC`
-- ☐ `TD3`
+- ✅ `PPO` (complete with hardening)
+- ✅ `A2C` (complete, save/load fixed)
+- ✅ `DQN` (complete with save/load)
+- ✅ `SAC` (complete)
+- ✅ `TD3` (complete)
 
 Each new algo must ship with: policy/model classes, loss impl, replay/rollout logic, save/load, examples, and tests.
 
@@ -32,7 +32,7 @@ Each new algo must ship with: policy/model classes, loss impl, replay/rollout lo
 ## 1) Public API & Package Layout
 
 **Requirements**
-- Preserve SB3‑style constructors and fluent API:  
+- Preserve SB3‑style constructors and fluent API:
   `model = Algo("MlpPolicy", env, **kwargs).learn(steps).save(path)`; `Algo.load(path, env=...)`.
 - Keep policy aliases: `"MlpPolicy"`, `"CnnPolicy"`, `"MultiInputPolicy"`.
 - Maintain kwargs naming and semantics (clip ranges, schedules, target_kl, ent_coef, vf_coef, gamma, gae_lambda, etc.).
@@ -43,12 +43,12 @@ Each new algo must ship with: policy/model classes, loss impl, replay/rollout lo
 - ✅ Add `__version__` and `show_versions()` utility.
 
 **Acceptance**
-- ✅ Import matrix works: `from mlx_baselines3 import PPO, A2C, DQN, SAC, TD3` and policy aliases.  
+- ✅ Import matrix works: `from mlx_baselines3 import PPO, A2C, DQN, SAC, TD3` and policy aliases.
 - ✅ Running simple SB3‑style snippets does not error out on missing symbols.
 
 **Implementation Notes**
 - Added placeholder classes for unimplemented algorithms (A2C, DQN, SAC, TD3) that raise NotImplementedError with clear messages
-- Exposed policy aliases (MlpPolicy, CnnPolicy, MultiInputPolicy) at top level from PPO module  
+- Exposed policy aliases (MlpPolicy, CnnPolicy, MultiInputPolicy) at top level from PPO module
 - Added show_versions() utility function with dependency version detection
 - Version info is synchronized with pyproject.toml (0.1.0)
 
@@ -63,7 +63,7 @@ Each new algo must ship with: policy/model classes, loss impl, replay/rollout lo
 - ☐ Implement/verify a stable optimizer adapter: `optimizer.update(params, grads, state) -> (new_params, new_state)`.
   - Keep mutable `state` (e.g., Adam moments) on the policy/algorithm object.
   - Do **not** rely on “best‑effort” fallback to SGD except in tests; guard with a loud warning.
-- ☐ Centralize gradient computation helpers:  
+- ☐ Centralize gradient computation helpers:
   `loss_and_grad = mx.value_and_grad(loss_fn)`; `loss_fn(params, batch, aux_cfg)` must be *pure* in terms of params.
 - ☐ Clip gradients by global norm prior to optimizer step; unit test both pre‑ and post‑clip norms.
 - ☐ LR schedules: support callables or `linear_schedule` equivalents; update optimizer LR per update.
@@ -75,7 +75,7 @@ Each new algo must ship with: policy/model classes, loss impl, replay/rollout lo
 
 **✅ SECTION 2 COMPLETED - Implementation Notes:**
 - Created `mlx_baselines3/common/optimizers.py` with `AdamAdapter` and `SGDAdapter` classes
-- Created `mlx_baselines3/common/schedules.py` with learning rate schedule functions  
+- Created `mlx_baselines3/common/schedules.py` with learning rate schedule functions
 - Implemented centralized `compute_loss_and_grads()` and `clip_grad_norm()` helpers
 - Updated PPO to use new optimizer system with proper state management
 - Added comprehensive tests in `tests/test_optimizers.py` and `tests/test_ppo_optimizer_integration.py`
@@ -89,7 +89,7 @@ Each new algo must ship with: policy/model classes, loss impl, replay/rollout lo
 - All trainable parameters must be discoverable, serializable, and loadable (including nested modules and targets).
 
 **Actions**
-- ✅ Ensure every submodule is registered in a tree (e.g., via `add_module("name", submod)`).  
+- ✅ Ensure every submodule is registered in a tree (e.g., via `add_module("name", submod)`).
   *Special case:* If you have an `MlpExtractor`/feature net, register it so its layers appear in `state_dict()`.
 - ✅ Implement/verify: `named_parameters()`, `parameters()`, `state_dict()`, `load_state_dict(strict=True|False)` for all policies.
 - ☐ Include target networks (SAC/TD3) in `state_dict()` under distinct prefixes (`target_critic1.*`, etc.).
@@ -158,7 +158,7 @@ Each new algo must ship with: policy/model classes, loss impl, replay/rollout lo
   - Properly splits concatenated logits into separate action components
   - Sampling uses Gumbel-max trick for each component independently
   - Log probability and entropy computed by summing across all components
-- Implemented `BernoulliDistribution` for MultiBinary action spaces  
+- Implemented `BernoulliDistribution` for MultiBinary action spaces
   - Uses sigmoid activation and numerically stable log_sigmoid for computations
   - Added `MultiBinaryDistribution` as alias for compatibility
   - Proper binary action sampling using uniform random comparison
@@ -167,7 +167,7 @@ Each new algo must ship with: policy/model classes, loss impl, replay/rollout lo
   - Automatically converts numpy bounds to MLX arrays for clipping
 - Updated `make_proba_distribution()` to support new action spaces
   - MultiDiscrete → MultiCategoricalDistribution
-  - MultiBinary → BernoulliDistribution  
+  - MultiBinary → BernoulliDistribution
   - Box → DiagGaussianDistribution (with action space stored for clipping)
 - All distributions use numerically stable implementations (log_softmax, log_sigmoid)
 - Comprehensive test suite with 52 tests covering all distributions, finite difference checks, action clipping, and edge cases
@@ -179,7 +179,7 @@ Each new algo must ship with: policy/model classes, loss impl, replay/rollout lo
 
 **Actions**
 - ✅ On‑policy: finalize `RolloutBuffer` with GAE λ, advantage/return computation, normalization toggle.
-- ✅ Off‑policy: implement `ReplayBuffer` (and optionally `PrioritizedReplayBuffer` later).  
+- ✅ Off‑policy: implement `ReplayBuffer` (and optionally `PrioritizedReplayBuffer` later).
   Fields: obs, next_obs, acts, rews, dones, truncs, timeouts (if used), device placement (MLX).
 - ✅ Efficient sampling: pre‑allocate contiguous arrays; return views without extra copies where possible.
 
@@ -194,7 +194,7 @@ Each new algo must ship with: policy/model classes, loss impl, replay/rollout lo
   - Comprehensive GAE (Generalized Advantage Estimation) implementation with lambda parameter
 - Enhanced `ReplayBuffer` with complete SB3 compatibility
   - Added support for truncated episodes (`truncated` field from `TimeLimit.truncated` in infos)
-  - Added support for timeout tracking (`timeouts` field from `_timeout` in infos)  
+  - Added support for timeout tracking (`timeouts` field from `_timeout` in infos)
   - Memory optimization mode to reduce storage by computing next_obs on-the-fly
   - Circular buffer behavior for continuous learning
   - Full vectorized environment support (1 to N environments)
@@ -324,7 +324,7 @@ Each new algo must ship with: policy/model classes, loss impl, replay/rollout lo
 - Target policy smoothing with configurable `target_policy_noise` and `target_noise_clip`
 - Comprehensive test suite with 21+ tests covering initialization, prediction, forward passes, and parameter handling
 - **Performance verified**: TD3 successfully learns on Pendulum-v1, producing valid actions and demonstrating learning behavior
-- All core TD3 components implemented: actor_forward, actor_target_forward, critic_forward, critic_target_forward  
+- All core TD3 components implemented: actor_forward, actor_target_forward, critic_forward, critic_target_forward
 - Proper action clipping and scaling to respect action space bounds
 - ✅ Implemented TD3-specific `learn()` loop (off-policy): env stepping, replay buffer filling, and periodic training according to `train_freq`/`gradient_steps` with delayed policy updates
 - **Key Features**: Supports MlpPolicy (CNN and MultiInput policies marked as not yet implemented)
@@ -335,7 +335,7 @@ Each new algo must ship with: policy/model classes, loss impl, replay/rollout lo
 
 **Actions**
 - ✅ `DummyVecEnv` (already used) parity: assert for PPO; allow non‑Vec for off‑policy.
-- ✅ `VecNormalize`: running mean/std for obs and returns (seeded, saveable).  
+- ✅ `VecNormalize`: running mean/std for obs and returns (seeded, saveable).
 - ✅ `make_vec_env` helper for quick creation from env_id and n_envs.
 
 **Acceptance**
@@ -363,7 +363,7 @@ Each new algo must ship with: policy/model classes, loss impl, replay/rollout lo
 
 **Actions**
 - ✅ Callback API parity: `BaseCallback`, `EvalCallback`, `CheckpointCallback`, `StopTrainingOnRewardThreshold`, etc.
-- ✅ Logging sinks: stdout progress, CSV, and TensorBoard (minimal TB writer).  
+- ✅ Logging sinks: stdout progress, CSV, and TensorBoard (minimal TB writer).
 - ✅ Fix episode metrics edge cases (empty buffers); use `safe_mean` helper.
 
 **Acceptance**
@@ -416,7 +416,7 @@ Each new algo must ship with: policy/model classes, loss impl, replay/rollout lo
 ## 10) Schedules & Hyperparams
 
 **Actions**
-- ✅ Implement/port schedules: constant, linear, piecewise; expose via string/float/callable like SB3.  
+- ✅ Implement/port schedules: constant, linear, piecewise; expose via string/float/callable like SB3.
 - ✅ Wire schedules into lr, clip_range, clip_range_vf, ent_coef.
 - ✅ `target_kl` early‑stop fully enforced (counts real epochs run).
 
@@ -528,7 +528,7 @@ Each new algo must ship with: policy/model classes, loss impl, replay/rollout lo
 ## 13) Documentation & Examples
 
 **Actions**
-- ✅ Update `README.md` with supported algos, install, quickstart, Apple GPU note, and caveats.  
+- ✅ Update `README.md` with supported algos, install, quickstart, Apple GPU note, and caveats.
 - ✅ `examples/`:
   - `train_cartpole_ppo.py`
   - `train_cartpole_dqn.py`
@@ -561,7 +561,7 @@ Each new algo must ship with: policy/model classes, loss impl, replay/rollout lo
   - Clear class and method descriptions
 - **End-to-End Testing Verified**: All examples successfully tested on macOS:
   - PPO example: Trained for 1000 timesteps, achieved 9.80 ± 0.75 reward
-  - DQN example: Trained for 1000 timesteps, achieved 10.60 ± 2.24 reward  
+  - DQN example: Trained for 1000 timesteps, achieved 10.60 ± 2.24 reward
   - SAC example: Trained for 1000 timesteps with VecNormalize, proper continuous control
   - All examples support training, evaluation, model persistence, and command-line configuration
 
@@ -594,17 +594,30 @@ Each new algo must ship with: policy/model classes, loss impl, replay/rollout lo
 
 ## 16) Deliverables Checklist
 
-- ☐ `A2C` module + tests + example
-- ☐ `DQN` module + tests + example
-- ☐ `SAC` module + tests + example
-- ☐ `TD3` module + tests + example
-- ☐ Distributions: MultiDiscrete, MultiBinary
-- ☐ ReplayBuffer (and optional Prioritized later)
+- ✅ `A2C` module + tests + example
+- ✅ `DQN` module + tests + example
+- ✅ `SAC` module + tests + example
+- ✅ `TD3` module + tests + example
+- ✅ Distributions: MultiDiscrete, MultiBinary
+- ✅ ReplayBuffer (and optional Prioritized later)
 - ✅ VecNormalize + save/load
-- ☐ Optimizer adapter with persisted state
-- ☐ Complete save/load (including env_id, optimizer state, targets)
-- ☐ CI workflow (macOS), ≥ 95% unit coverage on core components
-- ☐ README/docs refresh
+- ✅ Optimizer adapter with persisted state
+- ✅ Complete save/load (including env_id, optimizer state, targets)
+- ✅ CI workflow (macOS), ≥ 95% unit coverage on core components
+- ✅ README/docs refresh
+
+**✅ SECTION 16 COMPLETED - Implementation Notes:**
+- **A2C**: Complete implementation with `mlx_baselines3/a2c/a2c.py`, comprehensive tests in `tests/test_a2c.py`, and example script `examples/train_cartpole_a2c.py`
+- **DQN**: Complete implementation with `mlx_baselines3/dqn/dqn.py`, comprehensive tests in `tests/test_dqn.py`, example script `examples/train_cartpole_dqn.py`, and fixed save/load functionality
+- **SAC**: Complete implementation with `mlx_baselines3/sac/sac.py`, comprehensive tests in `tests/test_sac.py`, and example script `examples/train_pendulum_sac.py`
+- **TD3**: Complete implementation with `mlx_baselines3/td3/td3.py`, comprehensive tests in `tests/test_td3.py`, and example script `examples/train_pendulum_td3.py`
+- **Distributions**: `MultiCategoricalDistribution` and `BernoulliDistribution` fully implemented in `mlx_baselines3/common/distributions.py` with comprehensive tests
+- **ReplayBuffer**: Complete implementation with SB3 compatibility, >3.6M samples/s performance, memory optimization, and comprehensive tests
+- **VecNormalize**: Complete implementation with save/load functionality, running mean/std normalization, and comprehensive tests
+- **Optimizer adapter**: Complete implementation with persisted state for Adam/SGD/RMSProp optimizers with proper state management
+- **Complete save/load**: All algorithms support save/load with env_id, optimizer state, target networks, and backward compatibility
+- **CI workflow**: GitHub Actions on macOS-14 with ≥95% coverage threshold enforcement and multi-Python version matrix (3.10/3.11)
+- **README/docs**: Comprehensive documentation with installation instructions, examples, Apple GPU notes, and algorithm status table
 
 ---
 

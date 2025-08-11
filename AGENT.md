@@ -109,8 +109,10 @@ mlx-baselines3/
 │   └── test_vec_normalize.py         # VecNormalize tests and env type assertions
 ├── examples/                         # Usage examples
 │   ├── train_cartpole_ppo.py         # PPO training example with CartPole-v1
+│   ├── train_cartpole_a2c.py         # A2C training example with CartPole-v1
 │   ├── train_cartpole_dqn.py         # DQN training example with CartPole-v1  
-│   └── train_pendulum_sac.py         # SAC training example with Pendulum-v1
+│   ├── train_pendulum_sac.py         # SAC training example with Pendulum-v1
+│   └── train_pendulum_td3.py         # TD3 training example with Pendulum-v1
 ├── notes/                            # Development documentation
 │   ├── initial_plan.md               # Original project plan
 │   ├── mlx-baselines3_spec.md        # Detailed technical specification
@@ -126,19 +128,19 @@ mlx-baselines3/
 
 ## Implementation Status
 - **✅ PPO**: Fully implemented with MLP/CNN policies, training loop, save/load
-- **✅ A2C**: Fully implemented with training, policies, RMSProp/Adam optimizers (save/load has known issue)
+- **✅ A2C**: Fully implemented with training, policies, RMSProp/Adam optimizers, save/load, and example script
+- **✅ DQN**: Fully implemented with Q-networks, epsilon-greedy exploration, target networks, Huber loss, save/load, and example script
+- **✅ SAC**: Fully implemented with stochastic actor, twin critics, automatic entropy tuning, target networks, save/load, and example script
+- **✅ TD3**: Fully implemented with deterministic actor, twin critics, delayed policy updates, target policy smoothing, save/load, and example script
 - **✅ Common Infrastructure**: Base classes, buffers, distributions, policies, VecEnv
 - **✅ Optimizer System**: AdamAdapter, SGDAdapter, RMSPropAdapter, gradient clipping, LR schedules
 - **✅ Parameter Registry**: Complete state_dict/load_state_dict system with validation
-- **✅ Save/Load API Parity**: env_id persistence, optimizer state, policy_state, serializable lr/lr_schedule, backward compatibility
+- **✅ Save/Load API Parity**: env_id persistence, optimizer state, policy_state, serializable lr/lr_schedule, backward compatibility for all algorithms
 - **✅ Action Distributions**: CategoricalDistribution, DiagGaussianDistribution, MultiCategoricalDistribution, BernoulliDistribution with action clipping
 - **✅ Buffer System**: RolloutBuffer and ReplayBuffer with SB3 compatibility, >3.6M samples/s throughput
-- **✅ DQN**: Fully implemented with Q-networks, epsilon-greedy exploration, target networks, Huber loss
-- **✅ SAC**: Fully implemented with stochastic actor, twin critics, automatic entropy tuning, target networks, and a working off-policy learn() loop
-- **✅ TD3**: Fully implemented with deterministic actor, twin critics, delayed policy updates, target policy smoothing
 - **✅ VecNormalize**: Complete observation/reward normalization wrapper with save/load support
 - **✅ Callbacks & Logging**: Complete callback system with BaseCallback, EvalCallback, CheckpointCallback, StopTrainingOnRewardThreshold, ProgressBarCallback; Multi-format logging (stdout, CSV, TensorBoard)
 - **✅ Schedules & Hyperparams**: Complete schedule system (constant, linear, piecewise, exponential, cosine) with string parsing, SB3 compatibility, and PPO integration for lr/clip_range/ent_coef; target_kl early stopping with proper epoch counting
 - **✅ Performance Optimizations**: JIT compilation framework with 18% improvement on core operations, optimized PPO implementation with float32 enforcement, functional loss computations, and comprehensive performance testing suite
-- **✅ Testing & CI**: Complete test suite with 429 tests, GitHub Actions CI workflow, reproducibility tests, integration tests, and comprehensive coverage of all algorithms and infrastructure
-- **✅ Examples**: Complete example scripts with PPO/DQN/SAC training, evaluation, and command-line interfaces
+- **✅ Testing & CI**: Complete test suite with 429 tests, GitHub Actions CI workflow with ≥95% coverage threshold, reproducibility tests, integration tests, and comprehensive coverage of all algorithms and infrastructure
+- **✅ Examples**: Complete example scripts with PPO/A2C/DQN/SAC/TD3 training, evaluation, and command-line interfaces

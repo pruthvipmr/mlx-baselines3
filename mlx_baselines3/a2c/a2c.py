@@ -490,13 +490,11 @@ class A2C(OnPolicyAlgorithm):
         self._num_timesteps_at_start = self.num_timesteps
         self.start_time = time.time()
         
-        # Initialize callback (simple placeholder for now)
-        if callback is None:
-            from types import SimpleNamespace
-            callback = SimpleNamespace()
-            callback.on_training_start = lambda *args, **kwargs: None
-            callback.on_step = lambda *args, **kwargs: True
-            callback.on_training_end = lambda *args, **kwargs: None
+        # Initialize callback system
+        from mlx_baselines3.common.callbacks import convert_callback
+        callback = convert_callback(callback)
+        if hasattr(callback, 'init_callback'):
+            callback.init_callback(self)
         
         # Reset environment
         self._last_obs = self.env.reset()

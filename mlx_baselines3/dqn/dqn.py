@@ -482,5 +482,55 @@ class DQN(OffPolicyAlgorithm):
         )
         return data
 
-    # TODO: Implement save/load functionality for DQN
-    # This requires implementing the base save/load system first
+    def _get_save_data(self) -> Dict[str, Any]:
+        """Get data to save."""
+        data = super()._get_save_data()
+        
+        # Save DQN-specific parameters
+        data.update({
+            "buffer_size": self.buffer_size,
+            "learning_starts": self.learning_starts,
+            "batch_size": self.batch_size,
+            "tau": self.tau,
+            "gamma": self.gamma,
+            "train_freq": self.train_freq,
+            "gradient_steps": self.gradient_steps,
+            "target_update_interval": self.target_update_interval,
+            "exploration_fraction": self.exploration_fraction,
+            "exploration_initial_eps": self.exploration_initial_eps,
+            "exploration_final_eps": self.exploration_final_eps,
+            "max_grad_norm": self.max_grad_norm,
+            "optimize_memory_usage": self.optimize_memory_usage,
+        })
+        
+        # Save exploration schedule progress (current epsilon value)
+        data["current_exploration_rate"] = self._get_exploration_rate()
+        
+        # Save optimizer state if it exists
+        if hasattr(self, "optimizer_state"):
+            data["q_net_optimizer_state"] = self.optimizer_state
+        
+        return data
+
+    def _load_save_data(self, data: Dict[str, Any]) -> None:
+        """Load data from save."""
+        super()._load_save_data(data)
+        
+        # Load DQN-specific parameters
+        self.buffer_size = data.get("buffer_size", self.buffer_size)
+        self.learning_starts = data.get("learning_starts", self.learning_starts)
+        self.batch_size = data.get("batch_size", self.batch_size)
+        self.tau = data.get("tau", self.tau)
+        self.gamma = data.get("gamma", self.gamma)
+        self.train_freq = data.get("train_freq", self.train_freq)
+        self.gradient_steps = data.get("gradient_steps", self.gradient_steps)
+        self.target_update_interval = data.get("target_update_interval", self.target_update_interval)
+        self.exploration_fraction = data.get("exploration_fraction", self.exploration_fraction)
+        self.exploration_initial_eps = data.get("exploration_initial_eps", self.exploration_initial_eps)
+        self.exploration_final_eps = data.get("exploration_final_eps", self.exploration_final_eps)
+        self.max_grad_norm = data.get("max_grad_norm", self.max_grad_norm)
+        self.optimize_memory_usage = data.get("optimize_memory_usage", self.optimize_memory_usage)
+        
+        # Load optimizer state if it exists
+        if "q_net_optimizer_state" in data:
+            self.optimizer_state = data["q_net_optimizer_state"]

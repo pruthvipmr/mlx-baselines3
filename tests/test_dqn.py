@@ -304,11 +304,28 @@ class TestDQNTraining:
 class TestDQNSaveLoad:
     """Test DQN save/load functionality."""
     
-    @pytest.mark.skip(reason="Save/load functionality not yet implemented")
     def test_dqn_save_load(self):
         """Test DQN save and load."""
         env = gym.make("CartPole-v1")
-        model = DQN("MlpPolicy", env, verbose=0)
+        model = DQN(
+            "MlpPolicy", 
+            env, 
+            learning_rate=1e-3,
+            buffer_size=50000,
+            learning_starts=1000,
+            batch_size=64,
+            tau=0.005,
+            gamma=0.95,
+            train_freq=2,
+            gradient_steps=3,
+            target_update_interval=500,
+            exploration_fraction=0.2,
+            exploration_initial_eps=0.8,
+            exploration_final_eps=0.01,
+            max_grad_norm=5.0,
+            optimize_memory_usage=True,
+            verbose=0
+        )
         
         # Get initial prediction
         obs = env.reset()[0]
@@ -327,12 +344,20 @@ class TestDQNSaveLoad:
             
             assert np.array_equal(initial_action, loaded_action)
             
-            # Test hyperparameters are preserved
+            # Test all DQN-specific hyperparameters are preserved
             assert loaded_model.buffer_size == model.buffer_size
             assert loaded_model.learning_starts == model.learning_starts
             assert loaded_model.batch_size == model.batch_size
+            assert loaded_model.tau == model.tau
             assert loaded_model.gamma == model.gamma
+            assert loaded_model.train_freq == model.train_freq
+            assert loaded_model.gradient_steps == model.gradient_steps
+            assert loaded_model.target_update_interval == model.target_update_interval
+            assert loaded_model.exploration_fraction == model.exploration_fraction
             assert loaded_model.exploration_initial_eps == model.exploration_initial_eps
+            assert loaded_model.exploration_final_eps == model.exploration_final_eps
+            assert loaded_model.max_grad_norm == model.max_grad_norm
+            assert loaded_model.optimize_memory_usage == model.optimize_memory_usage
         
         env.close()
 

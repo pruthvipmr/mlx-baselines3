@@ -24,31 +24,7 @@ uv run python examples/train_cartpole_ppo.py
 uv run pytest
 ```
 
-## Project Structure
-
-```
-mlx-baselines3/
-├── mlx_baselines3/                    # Main package
-│   ├── __init__.py                    # Package entry point
-│   ├── common/                        # Shared infrastructure
-│   │   ├── base_class.py             # BaseAlgorithm, OnPolicy/OffPolicy classes
-│   │   ├── buffers.py                # RolloutBuffer, ReplayBuffer
-│   │   ├── callbacks.py              # Callback system
-│   │   ├── policies.py               # Base policy classes
-│   │   ├── optimizers.py             # MLX optimizer adapters
-│   │   ├── schedules.py              # Learning rate schedules
-│   │   └── vec_env/                  # Vectorized environments
-│   ├── ppo/                          # PPO algorithm
-│   ├── a2c/                          # A2C algorithm  
-│   ├── dqn/                          # DQN algorithm
-│   ├── sac/                          # SAC algorithm
-│   └── td3/                          # TD3 algorithm
-├── tests/                            # Test suite (429+ tests)
-├── examples/                         # Usage examples
-└── pyproject.toml                    # Dependencies and config
-```
-
-### Core Components
+## Core Components
 - **Algorithms**: Complete implementations of 5 major RL algorithms
 - **Policies**: MLP, CNN, and multi-input policy networks
 - **Buffers**: Efficient rollout and replay buffers for on/off-policy learning

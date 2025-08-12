@@ -4,10 +4,6 @@ A drop-in replacement for [Stable Baselines 3](https://stable-baselines3.readthe
 
 ## Setup
 
-### Requirements
-- **macOS** with Apple Silicon (M1/M2/M3/M4)
-- **Python 3.10 or 3.11**
-
 ### Installation
 ```bash
 git clone https://github.com/pruthvipmr/mlx-baselines3.git

@@ -1,6 +1,5 @@
 """SAC policies for continuous action spaces with stochastic actor and twin critics."""
 
-import math
 from typing import Any, Dict, List, Optional, Tuple, Type, Union
 
 import gymnasium as gym
@@ -8,7 +7,7 @@ import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
 
-from mlx_baselines3.common.distributions import DiagGaussianDistribution
+from mlx_baselines3.common.distributions import SquashedDiagGaussianDistribution
 from mlx_baselines3.common.policies import BasePolicy
 from mlx_baselines3.common.preprocessing import get_flattened_obs_dim, is_image_space
 from mlx_baselines3.common.torch_layers import (
@@ -169,7 +168,7 @@ class SACPolicy(BasePolicy):
         self.log_std_init_value = self.log_std_init
 
         # Action distribution
-        self.action_dist = DiagGaussianDistribution(self.action_dim)
+        self.action_dist = SquashedDiagGaussianDistribution(self.action_dim)
         self.action_dist.action_space = self.action_space
 
     def _get_data(self) -> Dict[str, Any]:
@@ -265,70 +264,36 @@ class SACPolicy(BasePolicy):
             log_prob: Log probability of the actions
             entropy: Entropy of the action distribution
         """
-        # Forward through actor network
         actor_output = self.actor_net(features)
-        
-        # Get mean and log_std
+
         mean = self.mu(actor_output)
         log_std = self.log_std(actor_output)
-        
-        # Clip mean to avoid extremely large values
+
         mean = mx.clip(mean, -self.clip_mean, self.clip_mean)
-        
-        # Clip log_std to reasonable range
         log_std = mx.clip(log_std, -20, 2)
-        
-        # Create Gaussian distribution
-        std = mx.exp(log_std)
-        
+
+        dist = self.action_dist.proba_distribution(mean, log_std)
+
         if deterministic:
-            # Use mean (mode) for deterministic action
-            actions_before_tanh = mean
+            squashed_actions = dist.mode()
+            log_prob = mx.zeros(squashed_actions.shape[:-1])
         else:
-            # Sample from Gaussian
-            eps = mx.random.normal(shape=mean.shape)
-            actions_before_tanh = mean + eps * std
-        
-        # Apply tanh squashing to bound actions to [-1, 1]
-        actions = mx.tanh(actions_before_tanh)
-        
-        # Scale actions to action space bounds
-        if hasattr(self.action_space, 'low') and hasattr(self.action_space, 'high'):
-            low = mx.array(self.action_space.low)
-            high = mx.array(self.action_space.high)
-            actions = low + (actions + 1.0) * 0.5 * (high - low)
-        
-        # Compute log probability with tanh correction
-        if deterministic:
-            log_prob = mx.zeros(mean.shape[:-1])
-        else:
-            # Log prob of pre-tanh actions
-            log_prob = -0.5 * mx.sum(
-                ((actions_before_tanh - mean) / std) ** 2 + 
-                2 * log_std + 
-                math.log(2 * math.pi), 
-                axis=-1
-            )
-            
-            # Tanh correction: log_prob - log(1 - tanh^2(action))
-            # Use identity: log(1 - tanh^2(x)) = log(sech^2(x)) = 2*log(sech(x)) = 2*log(2) - 2*log(cosh(x) + 1) - 2*log(cosh(x) - 1)
-            # Simpler: log(1 - tanh^2(x)) = 2 * log(2) - 2 * softplus(2*|x|) (stable version)
-            tanh_correction = mx.sum(2 * (math.log(2) - actions_before_tanh - mx.log(1 + mx.exp(-2 * actions_before_tanh))), axis=-1)
-            log_prob = log_prob - tanh_correction
-            
-            # Scale correction for action space bounds
-            if hasattr(self.action_space, 'low') and hasattr(self.action_space, 'high'):
-                low = mx.array(self.action_space.low)
-                high = mx.array(self.action_space.high)
-                scale_factor = 0.5 * (high - low)
-                log_prob = log_prob - mx.sum(mx.log(scale_factor), axis=-1)
-        
-        # Compute entropy (approximation for squashed Gaussian)
-        if deterministic:
-            entropy = mx.zeros(mean.shape[:-1])
-        else:
-            entropy = 0.5 * mx.sum(2 * log_std + math.log(2 * math.pi * math.e), axis=-1)
-        
+            squashed_actions, log_prob = dist.sample_and_log_prob()
+
+        # Approximate entropy with unsquashed Gaussian entropy
+        entropy = mx.zeros_like(log_prob) if deterministic else dist.entropy()
+
+        actions = squashed_actions
+        if hasattr(self.action_space, "low") and hasattr(self.action_space, "high"):
+            low = mx.array(self.action_space.low, dtype=actions.dtype)
+            high = mx.array(self.action_space.high, dtype=actions.dtype)
+            scale = 0.5 * (high - low)
+            actions = low + (actions + 1.0) * scale
+
+            if not deterministic:
+                log_scale = mx.sum(mx.log(scale + self.action_dist.epsilon))
+                log_prob = log_prob - log_scale
+
         return actions, log_prob, entropy
 
     def critic_forward(self, features: mx.array, actions: mx.array) -> List[mx.array]:
@@ -425,7 +390,7 @@ class SACPolicy(BasePolicy):
         """
         return self.forward(obs, deterministic)
 
-    def get_distribution(self, obs: mx.array) -> DiagGaussianDistribution:
+    def get_distribution(self, obs: mx.array) -> SquashedDiagGaussianDistribution:
         """
         Get the action distribution for given observations.
         

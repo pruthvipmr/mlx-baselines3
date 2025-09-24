@@ -6,6 +6,7 @@ import pytest
 import mlx.core as mx
 import gymnasium as gym
 import math
+import numpy as np
 
 from mlx_baselines3.common.distributions import (
     Distribution,
@@ -346,6 +347,58 @@ class TestSquashedDiagGaussianDistribution:
         # The Jacobian correction reduces the log probability
         # For this test, we just check that the correction is applied (result is different)
         assert not mx.allclose(log_prob_squashed, log_prob_unsquashed, atol=1e-3)
+
+    def test_log_prob_gradients_match_finite_difference(self):
+        """Gradient of log prob matches finite-difference approximation."""
+
+        mean = mx.array([[0.2, -0.3]])
+        log_std = mx.array([[-0.1, 0.25]])
+        pre_tanh = mx.array([[0.45, -0.2]])
+        actions = mx.tanh(pre_tanh)
+
+        def log_prob_fn(params):
+            temp_dist = SquashedDiagGaussianDistribution(action_dim=2)
+            temp_dist.proba_distribution(params["mean"], params["log_std"])
+            return mx.sum(temp_dist.log_prob(actions))
+
+        params = {"mean": mean, "log_std": log_std}
+        _, grads = mx.value_and_grad(log_prob_fn)(params)
+
+        grad_mean = np.array(grads["mean"])
+        grad_log_std = np.array(grads["log_std"])
+
+        eps = 1e-4
+        mean_np = np.array(mean)
+        log_std_np = np.array(log_std)
+
+        def eval_log_prob(mean_arr: np.ndarray, log_std_arr: np.ndarray) -> float:
+            temp_dist = SquashedDiagGaussianDistribution(action_dim=2)
+            temp_dist.proba_distribution(mx.array(mean_arr), mx.array(log_std_arr))
+            value = mx.sum(temp_dist.log_prob(actions))
+            return float(value)
+
+        fd_grad_mean = np.zeros_like(mean_np)
+        for idx in np.ndindex(mean_np.shape):
+            mean_plus = mean_np.copy()
+            mean_minus = mean_np.copy()
+            mean_plus[idx] += eps
+            mean_minus[idx] -= eps
+            val_plus = eval_log_prob(mean_plus, log_std_np)
+            val_minus = eval_log_prob(mean_minus, log_std_np)
+            fd_grad_mean[idx] = (val_plus - val_minus) / (2 * eps)
+
+        fd_grad_log_std = np.zeros_like(log_std_np)
+        for idx in np.ndindex(log_std_np.shape):
+            log_std_plus = log_std_np.copy()
+            log_std_minus = log_std_np.copy()
+            log_std_plus[idx] += eps
+            log_std_minus[idx] -= eps
+            val_plus = eval_log_prob(mean_np, log_std_plus)
+            val_minus = eval_log_prob(mean_np, log_std_minus)
+            fd_grad_log_std[idx] = (val_plus - val_minus) / (2 * eps)
+
+        assert np.allclose(grad_mean, fd_grad_mean, atol=1e-4, rtol=1e-3)
+        assert np.allclose(grad_log_std, fd_grad_log_std, atol=1e-4, rtol=1e-3)
 
 
 class TestMultiCategoricalDistribution:

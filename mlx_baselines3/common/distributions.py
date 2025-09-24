@@ -626,55 +626,69 @@ MultiBinaryDistribution = BernoulliDistribution
 class SquashedDiagGaussianDistribution(DiagGaussianDistribution):
     """
     Gaussian distribution with tanh squashing for continuous action spaces.
-    
-    Used in SAC and other algorithms that require bounded action spaces.
-    The actions are squashed to [-1, 1] using tanh.
+
+    Provides reparameterized sampling and applies the Jacobian correction
+    for the tanh transformation in log probability computations.
     """
-    
+
     def __init__(self, action_dim: int, epsilon: float = 1e-6):
         super().__init__(action_dim)
         self.epsilon = epsilon
-    
-    def sample(self, deterministic: bool = False) -> MlxArray:
-        """Sample an action and apply tanh squashing."""
-        if deterministic:
-            # For deterministic sampling, return tanh of the mean
-            return mx.tanh(self.mean)
-        
-        # Sample from unsquashed distribution
-        unsquashed_actions = super().sample(deterministic=False)
-        
-        # Apply tanh squashing
-        return mx.tanh(unsquashed_actions)
-    
-    def log_prob(self, actions: MlxArray) -> MlxArray:
-        """
-        Compute log probability of squashed actions.
-        
-        This requires correcting for the Jacobian of the tanh transformation.
-        """
+
+    def _rsample(self) -> Tuple[MlxArray, MlxArray]:
+        """Sample pre- and post-tanh actions via pathwise sampling."""
         if self.mean is None or self.std is None:
             raise ValueError("Must call proba_distribution() first")
-        
-        # Inverse tanh to get unsquashed actions
-        # Use clipping to avoid numerical issues
-        actions_clipped = mx.clip(actions, -1 + self.epsilon, 1 - self.epsilon)
-        unsquashed_actions = mx.arctanh(actions_clipped)
-        
-        # Log probability of unsquashed actions
-        log_prob_unsquashed = super().log_prob(unsquashed_actions)
-        
-        # Jacobian correction for tanh transformation
-        # d/dx tanh(x) = 1 - tanh^2(x) = 1 - y^2 where y = tanh(x)
-        log_jacobian = mx.sum(mx.log(1 - actions_clipped ** 2 + self.epsilon), axis=-1)
-        
-        return log_prob_unsquashed - log_jacobian
-    
+
+        noise = mx.random.normal(shape=self.mean.shape)
+        pre_tanh = self.mean + self.std * noise
+        squashed = mx.tanh(pre_tanh)
+        return pre_tanh, squashed
+
+    def _log_prob_from_pre_tanh(self, pre_tanh: MlxArray) -> MlxArray:
+        """Compute log π with tanh correction given pre-tanh actions."""
+        if self.mean is None or self.std is None:
+            raise ValueError("Must call proba_distribution() first")
+
+        diff = (pre_tanh - self.mean) / self.std
+        gaussian_log_prob = -0.5 * mx.sum(
+            diff ** 2 + 2 * self.log_std + math.log(2 * math.pi),
+            axis=-1,
+        )
+        correction = mx.sum(
+            mx.log(1.0 - mx.tanh(pre_tanh) ** 2 + self.epsilon),
+            axis=-1,
+        )
+        return gaussian_log_prob - correction
+
+    def sample(self, deterministic: bool = False) -> MlxArray:
+        """Sample squashed actions."""
+        if deterministic:
+            return self.mode()
+
+        _, squashed = self._rsample()
+        return squashed
+
+    def sample_and_log_prob(self) -> Tuple[MlxArray, MlxArray]:
+        """Sample squashed actions and return their log probability."""
+        pre_tanh, squashed = self._rsample()
+        log_prob = self._log_prob_from_pre_tanh(pre_tanh)
+        return squashed, log_prob
+
+    def log_prob(self, actions: MlxArray) -> MlxArray:
+        """Compute log probability of provided squashed actions."""
+        if self.mean is None or self.std is None:
+            raise ValueError("Must call proba_distribution() first")
+
+        actions_clipped = mx.clip(actions, -1.0 + self.epsilon, 1.0 - self.epsilon)
+        pre_tanh = mx.arctanh(actions_clipped)
+        return self._log_prob_from_pre_tanh(pre_tanh)
+
     def mode(self) -> MlxArray:
         """Return the mode (tanh of mean) of the distribution."""
         if self.mean is None:
             raise ValueError("Must call proba_distribution() first")
-        
+
         return mx.tanh(self.mean)
 
 

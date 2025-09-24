@@ -75,8 +75,9 @@ QValuePredict = MlxArray
 # ============================================================================
 
 # Training batch data
-RolloutBatch = Dict[str, MlxArray]
-ReplayBatch = Dict[str, MlxArray]
+TensorOrDict = Union[MlxArray, Dict[str, MlxArray]]
+RolloutBatch = Dict[str, TensorOrDict]
+ReplayBatch = Dict[str, TensorOrDict]
 
 # Buffer samples
 BufferSample = Tuple[MlxArray, ...]

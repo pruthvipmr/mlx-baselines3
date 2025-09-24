@@ -6,7 +6,7 @@ in MLX Baselines3, maintaining API compatibility with Stable Baselines3.
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union, cast
 
 import gymnasium as gym
 import numpy as np
@@ -152,12 +152,12 @@ class VecEnv(ABC):
             List of seeds used for each environment
         """
         if seed is None:
-            seeds = [None] * self.num_envs
+            seeds: List[Optional[int]] = [None] * self.num_envs
         else:
             seeds = [seed + i for i in range(self.num_envs)]
 
         return [
-            self.env_method("seed", seed=env_seed, indices=[i])[0]
+            cast(Optional[int], self.env_method("seed", seed=env_seed, indices=[i])[0])
             for i, env_seed in enumerate(seeds)
         ]
 

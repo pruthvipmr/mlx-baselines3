@@ -6,7 +6,7 @@ to neural networks, with special handling for image observations and normalizati
 """
 
 import warnings
-from typing import Dict, Tuple, Union
+from typing import Any, Dict, List, Tuple, TypeVar, Union, cast
 
 import gymnasium as gym
 import numpy as np
@@ -145,9 +145,10 @@ def maybe_transpose(
     return observation
 
 
-def normalize_image(
-    observation: Union[np.ndarray, MlxArray], dtype: type = np.float32
-) -> Union[np.ndarray, MlxArray]:
+ArrayLikeT = TypeVar("ArrayLikeT", np.ndarray, MlxArray)
+
+
+def normalize_image(observation: ArrayLikeT, dtype: Any = np.float32) -> ArrayLikeT:
     """
     Normalize image observations from [0, 255] to [0, 1].
 
@@ -160,10 +161,9 @@ def normalize_image(
     """
     if isinstance(observation, mx.array):
         # MLX array
-        return mx.array(observation, dtype=mx.float32) / 255.0
-    else:
-        # NumPy array
-        return observation.astype(dtype) / 255.0
+        return cast(ArrayLikeT, mx.array(observation, dtype=mx.float32) / 255.0)
+    # NumPy array
+    return cast(ArrayLikeT, observation.astype(dtype) / 255.0)
 
 
 def preprocess_obs(
@@ -194,7 +194,7 @@ def preprocess_obs(
         if not isinstance(obs, dict):
             raise ValueError("Expected dict observation for Dict observation space")
 
-        preprocessed_obs = {}
+        preprocessed_obs: Dict[str, NumpyObsType] = {}
         for key, subspace in observation_space.spaces.items():
             if key in obs:
                 preprocessed_obs[key] = preprocess_obs(
@@ -203,10 +203,10 @@ def preprocess_obs(
             else:
                 warnings.warn(f"Key '{key}' not found in observation dict")
 
-        return preprocessed_obs
+        return cast(NumpyObsType, preprocessed_obs)
 
     elif isinstance(observation_space, gym.spaces.Box):
-        processed_obs = obs.copy()
+        processed_obs = np.array(obs, copy=True)
 
         # Handle image preprocessing
         if is_image_space(observation_space):
@@ -216,7 +216,7 @@ def preprocess_obs(
 
             # Normalize if needed
             if normalize_images:
-                processed_obs = normalize_image(processed_obs)
+                processed_obs = cast(np.ndarray, normalize_image(processed_obs))
 
         return processed_obs
 
@@ -227,7 +227,7 @@ def preprocess_obs(
 
 def get_obs_shape(
     observation_space: GymSpace,
-) -> Union[Tuple[int, ...], Dict[str, Tuple[int, ...]]]:
+) -> Union[Tuple[int, ...], Dict[str, Any]]:
     """
     Get the shape of observations after preprocessing.
 
@@ -267,12 +267,20 @@ def get_obs_shape(
 
     else:
         # Fallback for other space types
-        if hasattr(observation_space, "shape"):
-            return observation_space.shape
-        else:
+        shape_attr = getattr(observation_space, "shape", None)
+        if shape_attr is None:
             raise ValueError(
                 f"Unsupported observation space type: {type(observation_space)}"
             )
+        if isinstance(shape_attr, tuple):
+            return shape_attr
+        if isinstance(shape_attr, list):
+            return tuple(int(dim) for dim in shape_attr)
+        if isinstance(shape_attr, int):
+            return (shape_attr,)
+        raise ValueError(
+            f"Unsupported shape attribute {shape_attr!r} for {type(observation_space)}"
+        )
 
 
 def check_for_nested_spaces(observation_space: GymSpace) -> bool:
@@ -298,7 +306,7 @@ def check_for_nested_spaces(observation_space: GymSpace) -> bool:
 
 
 def flatten_obs(
-    obs: Union[np.ndarray, Dict[str, np.ndarray]], observation_space: GymSpace
+    obs: Union[np.ndarray, Dict[str, Any]], observation_space: GymSpace
 ) -> np.ndarray:
     """
     Flatten observations for algorithms that require flat input.
@@ -315,11 +323,16 @@ def flatten_obs(
             raise ValueError("Expected dict observation for Dict observation space")
 
         # Flatten each sub-observation and concatenate
-        flattened_parts = []
+        flattened_parts: List[np.ndarray] = []
         for key in sorted(observation_space.spaces.keys()):  # Sort for consistency
             if key in obs:
                 sub_obs = obs[key]
-                if isinstance(sub_obs, np.ndarray):
+                subspace = observation_space.spaces[key]
+                if isinstance(sub_obs, dict):
+                    flattened_parts.append(
+                        flatten_obs(sub_obs, subspace).flatten()
+                    )
+                elif isinstance(sub_obs, np.ndarray):
                     flattened_parts.append(sub_obs.flatten())
                 else:
                     flattened_parts.append(np.array([sub_obs]).flatten())
@@ -327,7 +340,7 @@ def flatten_obs(
         return np.concatenate(flattened_parts)
 
     elif isinstance(observation_space, gym.spaces.Box):
-        return obs.flatten()
+        return np.asarray(obs).flatten()
 
     else:
         # For discrete and other spaces
@@ -362,14 +375,14 @@ def get_flattened_obs_dim(observation_space: GymSpace) -> int:
     elif isinstance(
         observation_space, (gym.spaces.MultiBinary, gym.spaces.MultiDiscrete)
     ):
-        return int(np.prod(observation_space.shape))
+        return int(np.prod(np.asarray(observation_space.shape)))
 
     else:
         # Fallback
-        if hasattr(observation_space, "shape"):
-            return int(np.prod(observation_space.shape))
-        else:
+        shape_attr = getattr(observation_space, "shape", None)
+        if shape_attr is None:
             return 1
+        return int(np.prod(np.asarray(shape_attr)))
 
 
 def convert_to_mlx(obs: NumpyObsType) -> ObsType:
@@ -383,6 +396,11 @@ def convert_to_mlx(obs: NumpyObsType) -> ObsType:
         Observation(s) as MLX arrays
     """
     if isinstance(obs, dict):
-        return {key: mx.array(value) for key, value in obs.items()}
-    else:
-        return mx.array(obs)
+        converted: Dict[str, ObsType] = {}
+        for key, value in obs.items():
+            if isinstance(value, dict):
+                converted[key] = convert_to_mlx(value)
+            else:
+                converted[key] = mx.array(value)
+        return cast(ObsType, converted)
+    return mx.array(obs)

@@ -1,16 +1,16 @@
-"""
-Logger module for MLX Baselines3.
+"""Lightweight logging utilities shared across algorithms."""
 
-Provides logging functionality for training metrics, including
-stdout output, CSV logging, and TensorBoard integration.
-"""
+from __future__ import annotations
 
 import csv
+import importlib
 import os
 import time
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union, TextIO
 
 import numpy as np
+
+ExcludedFormats = Tuple[str, ...]
 
 
 class HParam:
@@ -18,7 +18,7 @@ class HParam:
     Hyperparameter class for TensorBoard logging.
     """
 
-    def __init__(self, value: Any, hparam_type: Optional[str] = None):
+    def __init__(self, value: Any, hparam_type: Optional[str] = None) -> None:
         """
         Initialize hyperparameter.
 
@@ -42,7 +42,7 @@ class Logger:
         self,
         folder: Optional[str] = None,
         output_formats: Optional[List[str]] = None,
-    ):
+    ) -> None:
         """
         Initialize the logger.
 
@@ -53,15 +53,15 @@ class Logger:
         if output_formats is None:
             output_formats = ["stdout"]
 
-        self.folder = folder
-        self.output_formats = output_formats
-        self.name_to_value = {}
-        self.name_to_count = {}
-        self.name_to_excluded = {}
+        self.folder: Optional[str] = folder
+        self.output_formats: List[str] = output_formats
+        self.name_to_value: Dict[str, Any] = {}
+        self.name_to_count: Dict[str, int] = {}
+        self.name_to_excluded: Dict[str, ExcludedFormats] = {}
         self.level = 1  # INFO level by default
 
         # Initialize output handlers
-        self.writers = []
+        self.writers: List[OutputFormat] = []
 
         if "stdout" in output_formats:
             self.writers.append(HumanOutputFormat())
@@ -80,7 +80,7 @@ class Logger:
         self,
         key: str,
         value: Any,
-        exclude: Optional[Union[str, Tuple[str, ...]]] = None,
+        exclude: Optional[Union[str, ExcludedFormats]] = None,
     ) -> None:
         """
         Log a value with a given key.
@@ -91,12 +91,14 @@ class Logger:
             exclude: Format(s) to exclude from logging this key
         """
         if exclude is None:
-            exclude = tuple()
+            exclude_tuple: ExcludedFormats = ()
         elif isinstance(exclude, str):
-            exclude = (exclude,)
+            exclude_tuple = (exclude,)
+        else:
+            exclude_tuple = exclude
 
         self.name_to_value[key] = value
-        self.name_to_excluded[key] = exclude
+        self.name_to_excluded[key] = exclude_tuple
 
     def record_mean(
         self, key: str, value: Union[int, float], exclude: Optional[str] = None
@@ -110,16 +112,21 @@ class Logger:
             exclude: Format to exclude from logging this key
         """
         if exclude is None:
-            exclude = tuple()
-        elif isinstance(exclude, str):
-            exclude = (exclude,)
+            exclude_tuple: ExcludedFormats = ()
+        else:
+            exclude_tuple = (exclude,)
 
         if key not in self.name_to_value:
             self.name_to_value[key] = []
             self.name_to_count[key] = 0
-            self.name_to_excluded[key] = exclude
 
-        self.name_to_value[key].append(value)
+        self.name_to_excluded[key] = exclude_tuple
+
+        existing = self.name_to_value[key]
+        if isinstance(existing, list):
+            existing.append(value)
+        else:
+            self.name_to_value[key] = [value]
         self.name_to_count[key] += 1
 
     def dump(self, step: int = 0) -> None:
@@ -130,7 +137,7 @@ class Logger:
             step: Current training step/timestep
         """
         # Compute means for averaged values
-        key_to_value = {}
+        key_to_value: Dict[str, Any] = {}
         for key, value in self.name_to_value.items():
             if isinstance(value, list):
                 key_to_value[key] = np.mean(value) if len(value) > 0 else 0.0
@@ -169,7 +176,10 @@ class OutputFormat:
     """Abstract base class for output formats."""
 
     def write(
-        self, key_values: Dict[str, Any], key_excluded: Dict[str, tuple], step: int
+        self,
+        key_values: Dict[str, Any],
+        key_excluded: Dict[str, ExcludedFormats],
+        step: int,
     ) -> None:
         """
         Write key-value pairs.
@@ -191,19 +201,22 @@ class HumanOutputFormat(OutputFormat):
     Output format for human-readable console output.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize human output format."""
         self.start_time = time.time()
 
     def write(
-        self, key_values: Dict[str, Any], key_excluded: Dict[str, tuple], step: int
+        self,
+        key_values: Dict[str, Any],
+        key_excluded: Dict[str, ExcludedFormats],
+        step: int,
     ) -> None:
         """Write key-value pairs to stdout."""
         # Filter out keys excluded from stdout
         filtered_kvs = {
             key: value
             for key, value in key_values.items()
-            if "stdout" not in key_excluded.get(key, tuple())
+            if "stdout" not in key_excluded.get(key, ())
         }
 
         if not filtered_kvs:
@@ -220,7 +233,7 @@ class HumanOutputFormat(OutputFormat):
         output_lines.append(f"|    total_timesteps  | {step:10} |")
 
         # Group keys by category
-        categories = {}
+        categories: Dict[str, Dict[str, Any]] = {}
         for key, value in filtered_kvs.items():
             if "/" in key:
                 category = key.split("/")[0]
@@ -253,7 +266,7 @@ class CSVOutputFormat(OutputFormat):
     Output format for CSV files.
     """
 
-    def __init__(self, filename: str):
+    def __init__(self, filename: str) -> None:
         """
         Initialize CSV output format.
 
@@ -261,19 +274,23 @@ class CSVOutputFormat(OutputFormat):
             filename: Path to CSV file
         """
         self.filename = filename
-        self.file = None
-        self.keys = []
+        self.file: Optional[TextIO] = None
+        self.writer: Optional[csv.DictWriter[str]] = None
+        self.keys: List[str] = []
         self.header_written = False
 
     def write(
-        self, key_values: Dict[str, Any], key_excluded: Dict[str, tuple], step: int
+        self,
+        key_values: Dict[str, Any],
+        key_excluded: Dict[str, ExcludedFormats],
+        step: int,
     ) -> None:
         """Write key-value pairs to CSV file."""
         # Filter out keys excluded from CSV
-        filtered_kvs = {
+        filtered_kvs: Dict[str, Any] = {
             key: value
             for key, value in key_values.items()
-            if "csv" not in key_excluded.get(key, tuple())
+            if "csv" not in key_excluded.get(key, ())
         }
 
         if not filtered_kvs:
@@ -298,6 +315,9 @@ class CSVOutputFormat(OutputFormat):
             self.writer = csv.DictWriter(self.file, fieldnames=self.keys)
             self.header_written = False
 
+        if self.writer is None or self.file is None:
+            return
+
         if not self.header_written:
             self.writer.writeheader()
             self.header_written = True
@@ -310,6 +330,7 @@ class CSVOutputFormat(OutputFormat):
         if self.file is not None:
             self.file.close()
             self.file = None
+        self.writer = None
 
 
 class TensorBoardOutputFormat(OutputFormat):
@@ -317,7 +338,7 @@ class TensorBoardOutputFormat(OutputFormat):
     Output format for TensorBoard logging.
     """
 
-    def __init__(self, log_dir: str):
+    def __init__(self, log_dir: str) -> None:
         """
         Initialize TensorBoard output format.
 
@@ -325,22 +346,34 @@ class TensorBoardOutputFormat(OutputFormat):
             log_dir: Directory for TensorBoard logs
         """
         try:
-            from torch.utils.tensorboard import SummaryWriter
+            tensorboard_module = importlib.import_module("torch.utils.tensorboard")
+        except ImportError as exc:
+            raise ImportError(
+                "TensorBoard logging requires PyTorch: pip install torch"
+            ) from exc
 
-            self.writer = SummaryWriter(log_dir=log_dir)
-        except ImportError:
-            raise ImportError("TensorBoard logging requires PyTorch: pip install torch")
+        summary_writer_cls = getattr(tensorboard_module, "SummaryWriter", None)
+        if summary_writer_cls is None:
+            raise ImportError("torch.utils.tensorboard.SummaryWriter is unavailable")
+
+        self.writer: Any = summary_writer_cls(log_dir=log_dir)
 
     def write(
-        self, key_values: Dict[str, Any], key_excluded: Dict[str, tuple], step: int
+        self,
+        key_values: Dict[str, Any],
+        key_excluded: Dict[str, ExcludedFormats],
+        step: int,
     ) -> None:
         """Write key-value pairs to TensorBoard."""
         # Filter out keys excluded from TensorBoard
         filtered_kvs = {
             key: value
             for key, value in key_values.items()
-            if "tensorboard" not in key_excluded.get(key, tuple())
+            if "tensorboard" not in key_excluded.get(key, ())
         }
+
+        if self.writer is None:
+            return
 
         for key, value in filtered_kvs.items():
             if isinstance(value, (int, float)):
@@ -350,8 +383,9 @@ class TensorBoardOutputFormat(OutputFormat):
 
     def close(self) -> None:
         """Close TensorBoard writer."""
-        if hasattr(self, "writer") and self.writer is not None:
+        if getattr(self, "writer", None) is not None:
             self.writer.close()
+            self.writer = None
 
 
 def configure_logger(

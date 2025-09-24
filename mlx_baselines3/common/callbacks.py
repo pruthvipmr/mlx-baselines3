@@ -1,20 +1,23 @@
-"""
-Callback system for training monitoring and control.
+"""Callback helpers used by training loops."""
 
-This module provides the callback infrastructure for MLX Baselines3,
-allowing users to monitor training, save checkpoints, evaluate models,
-and implement early stopping based on custom criteria.
-"""
+from __future__ import annotations
 
 import os
 import warnings
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 
 import numpy as np
 
 from mlx_baselines3.common.type_aliases import GymEnv
 from mlx_baselines3.common.utils import safe_mean
+
+if TYPE_CHECKING:
+    from mlx_baselines3.common.base_class import BaseAlgorithm
+    from tqdm import tqdm as TqdmCallable
+else:  # pragma: no cover - used only for typing
+    BaseAlgorithm = Any
+    TqdmCallable = Callable[..., Any]
 
 
 class BaseCallback(ABC):
@@ -33,14 +36,14 @@ class BaseCallback(ABC):
             verbose: Verbosity level (0: no output, 1: info, 2: debug)
         """
         self.verbose = verbose
-        self.model = None
-        self.training_env = None
+        self.model: Optional[BaseAlgorithm] = None
+        self.training_env: Optional[GymEnv] = None
         self.n_calls = 0
         self.num_timesteps = 0
-        self.locals = None
-        self.globals = None
+        self.locals: Dict[str, Any] = {}
+        self.globals: Dict[str, Any] = {}
 
-    def init_callback(self, model) -> None:
+    def init_callback(self, model: BaseAlgorithm) -> None:
         """
         Initialize the callback.
 
@@ -59,7 +62,9 @@ class BaseCallback(ABC):
         pass
 
     def on_training_start(
-        self, locals_: Dict[str, Any], globals_: Dict[str, Any]
+        self,
+        locals_: Optional[Dict[str, Any]] = None,
+        globals_: Optional[Dict[str, Any]] = None,
     ) -> None:
         """
         Called at the beginning of training.
@@ -69,8 +74,14 @@ class BaseCallback(ABC):
             globals_: Global variables from the training function
         """
         # Initialize locals and globals for the callback
-        self.locals = locals_
-        self.globals = globals_
+        if locals_ is not None:
+            self.locals = locals_
+        else:
+            self.locals = {}
+        if globals_ is not None:
+            self.globals = globals_
+        else:
+            self.globals = {}
         self._on_training_start()
 
     @abstractmethod
@@ -235,6 +246,8 @@ class CheckpointCallback(BaseCallback):
 
     def _on_step(self) -> bool:
         """Save checkpoint if save_freq reached."""
+        if self.model is None:
+            return True
         if self.n_calls % self.save_freq == 0:
             path = os.path.join(
                 self.save_path, f"{self.name_prefix}_{self.num_timesteps}_steps"
@@ -286,9 +299,9 @@ class EvalCallback(BaseCallback):
         self.eval_env = eval_env
         self.best_model_save_path = best_model_save_path
         self.log_path = log_path
-        self.evaluations_results = []
-        self.evaluations_timesteps = []
-        self.evaluations_length = []
+        self.evaluations_results: List[np.ndarray] = []
+        self.evaluations_timesteps: List[int] = []
+        self.evaluations_length: List[np.ndarray] = []
         self.callback_on_new_best = callback_on_new_best
 
     def _init_callback(self):
@@ -339,8 +352,8 @@ class EvalCallback(BaseCallback):
                 self.model.logger.record("eval/mean_ep_length", mean_ep_length)
 
             self.evaluations_timesteps.append(self.num_timesteps)
-            self.evaluations_results.append(episode_rewards)
-            self.evaluations_length.append(episode_lengths)
+            self.evaluations_results.append(np.array(episode_rewards, dtype=float))
+            self.evaluations_length.append(np.array(episode_lengths, dtype=float))
 
             if mean_reward > self.best_mean_reward:
                 if self.verbose > 0:
@@ -356,10 +369,13 @@ class EvalCallback(BaseCallback):
 
         return True
 
-    def _evaluate_policy(self):
+    def _evaluate_policy(self) -> Tuple[List[float], List[int]]:
         """Evaluate the policy for n_eval_episodes episodes."""
-        episode_rewards = []
-        episode_lengths = []
+        if self.model is None:
+            return [], []
+
+        episode_rewards: List[float] = []
+        episode_lengths: List[int] = []
 
         for _ in range(self.n_eval_episodes):
             obs = self.eval_env.reset()
@@ -408,7 +424,11 @@ class StopTrainingOnRewardThreshold(BaseCallback):
 
     def _on_step(self) -> bool:
         """Check if reward threshold is reached."""
-        if hasattr(self.model, "ep_info_buffer") and len(self.model.ep_info_buffer) > 0:
+        if (
+            self.model is not None
+            and hasattr(self.model, "ep_info_buffer")
+            and len(self.model.ep_info_buffer) > 0
+        ):
             # Check recent episode rewards
             recent_rewards = [
                 ep_info["r"] for ep_info in self.model.ep_info_buffer[-100:]
@@ -442,13 +462,14 @@ class ProgressBarCallback(BaseCallback):
             verbose: Verbosity level
         """
         super().__init__(verbose)
-        self.progress_bar = None
+        self.progress_bar: Optional[TqdmCallable] = None
+        self.pbar: Optional[Any] = None
         self._total_timesteps = 0
 
     def _init_callback(self) -> None:
         """Initialize progress bar."""
         try:
-            from tqdm import tqdm
+            from tqdm import tqdm  # type: ignore[import-untyped]
 
             self.progress_bar = tqdm
         except ImportError:
@@ -459,12 +480,12 @@ class ProgressBarCallback(BaseCallback):
     def _on_training_start(self) -> None:
         """Start progress bar."""
         if self.progress_bar is not None:
-            self._total_timesteps = self.locals.get("total_timesteps", 0)
+            self._total_timesteps = int(self.locals.get("total_timesteps", 0))
             self.pbar = self.progress_bar(total=self._total_timesteps)
 
     def _on_step(self) -> bool:
         """Update progress bar."""
-        if self.progress_bar is not None and hasattr(self, "pbar"):
+        if self.progress_bar is not None and self.pbar is not None:
             # Update progress
             self.pbar.n = self.num_timesteps
 
@@ -485,11 +506,37 @@ class ProgressBarCallback(BaseCallback):
 
     def _on_training_end(self) -> None:
         """Close progress bar."""
-        if self.progress_bar is not None and hasattr(self, "pbar"):
+        if self.progress_bar is not None and self.pbar is not None:
             self.pbar.close()
+            self.pbar = None
 
 
-def convert_callback(callback) -> BaseCallback:
+class NoOpCallback(BaseCallback):
+    """Callback that performs no action; used as a placeholder."""
+
+    def __init__(self) -> None:
+        super().__init__(verbose=0)
+
+    def _init_callback(self) -> None:  # pragma: no cover - trivial
+        pass
+
+    def _on_training_start(self) -> None:  # pragma: no cover - trivial
+        pass
+
+    def _on_step(self) -> bool:
+        return True
+
+    def _on_training_end(self) -> None:  # pragma: no cover - trivial
+        pass
+
+    def _on_rollout_start(self) -> None:  # pragma: no cover - trivial
+        pass
+
+    def _on_rollout_end(self) -> None:  # pragma: no cover - trivial
+        pass
+
+
+def convert_callback(callback: Optional[Any]) -> Any:
     """
     Convert a callback or list of callbacks to BaseCallback format.
 
@@ -500,17 +547,7 @@ def convert_callback(callback) -> BaseCallback:
         BaseCallback instance
     """
     if callback is None:
-        # Create a dummy callback that does nothing
-        from types import SimpleNamespace
-
-        dummy = SimpleNamespace()
-        dummy.init_callback = lambda model: None
-        dummy.on_training_start = lambda *args, **kwargs: None
-        dummy.on_step = lambda *args, **kwargs: True
-        dummy.on_training_end = lambda *args, **kwargs: None
-        dummy.on_rollout_start = lambda *args, **kwargs: None
-        dummy.on_rollout_end = lambda *args, **kwargs: None
-        return dummy
+        return NoOpCallback()
 
     if isinstance(callback, list):
         return CallbackList(callback)

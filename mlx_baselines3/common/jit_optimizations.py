@@ -1,15 +1,13 @@
-"""
-JIT compilation optimizations for improved performance.
+"""Helpers for optionally using MLX JIT-compiled kernels."""
 
-This module explores MLX's JIT compilation capabilities to accelerate
-training and inference operations.
-"""
+from __future__ import annotations
+
+from typing import Any, Callable, Dict, List, Optional, Tuple, cast
 
 import mlx.core as mx
-from typing import Dict, Callable, Any, Tuple
 
 
-def jit_loss_computation(func: Callable) -> Callable:
+def jit_loss_computation(func: Callable[..., Any]) -> Callable[..., Any]:
     """
     JIT compile loss computation functions.
 
@@ -76,7 +74,10 @@ def jit_ppo_loss_core(
     entropy_loss = -mx.mean(entropy)
 
     # Total loss
-    return policy_loss + ent_coef * entropy_loss + vf_coef * value_loss
+    return cast(
+        mx.array,
+        policy_loss + ent_coef * entropy_loss + vf_coef * value_loss,
+    )
 
 
 @jit_loss_computation
@@ -111,9 +112,11 @@ def jit_advantage_normalization(advantages: mx.array) -> mx.array:
         Normalized advantages
     """
     if len(advantages) > 1:
-        return (advantages - mx.mean(advantages)) / (mx.std(advantages) + 1e-8)
-    else:
-        return advantages
+        return cast(
+            mx.array,
+            (advantages - mx.mean(advantages)) / (mx.std(advantages) + 1e-8),
+        )
+    return advantages
 
 
 class JITOptimizedOperations:
@@ -121,9 +124,10 @@ class JITOptimizedOperations:
     Collection of JIT-optimized operations for training.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize JIT operations."""
         self.jit_enabled = self._check_jit_support()
+        self.compiled_ops: Dict[str, Callable[..., Any]] = {}
         if self.jit_enabled:
             self._compile_operations()
 
@@ -134,7 +138,7 @@ class JITOptimizedOperations:
             if hasattr(mx, "compile"):
 
                 @mx.compile
-                def test_func(x):
+                def test_func(x: mx.array) -> mx.array:
                     return x * 2
 
                 # Test the compiled function
@@ -144,7 +148,7 @@ class JITOptimizedOperations:
         except Exception:
             return False
 
-    def _compile_operations(self):
+    def _compile_operations(self) -> None:
         """Compile frequently used operations."""
         if not self.jit_enabled:
             return
@@ -166,7 +170,7 @@ class JITOptimizedOperations:
         old_values: mx.array,
         entropy: mx.array,
         clip_range: float = 0.2,
-        clip_range_vf: float = None,
+        clip_range_vf: Optional[float] = None,
         ent_coef: float = 0.0,
         vf_coef: float = 0.5,
     ) -> mx.array:
@@ -189,7 +193,7 @@ class JITOptimizedOperations:
         Returns:
             Total loss
         """
-        clip_range_vf = clip_range_vf or 0.0
+        vf_clip = 0.0 if clip_range_vf is None else clip_range_vf
 
         if self.jit_enabled:
             return self.compiled_ops["ppo_loss"](
@@ -201,7 +205,7 @@ class JITOptimizedOperations:
                 old_values,
                 entropy,
                 clip_range,
-                clip_range_vf,
+                vf_clip,
                 ent_coef,
                 vf_coef,
             )
@@ -216,14 +220,14 @@ class JITOptimizedOperations:
                 old_values,
                 entropy,
                 clip_range,
-                clip_range_vf,
+                vf_clip,
                 ent_coef,
                 vf_coef,
             )
 
     def optimized_grad_clipping(
-        self, grads: Dict[str, mx.array], max_norm: float
-    ) -> Tuple[Dict[str, mx.array], float]:
+        self, grads: Dict[str, Optional[mx.array]], max_norm: float
+    ) -> Tuple[Dict[str, Optional[mx.array]], float]:
         """
         Clip gradients with JIT optimization.
 
@@ -235,7 +239,7 @@ class JITOptimizedOperations:
             Tuple of (clipped_grads, original_norm)
         """
         # Flatten gradients for efficient norm computation
-        grad_values = [g for g in grads.values() if g is not None]
+        grad_values: List[mx.array] = [g for g in grads.values() if g is not None]
         if not grad_values:
             return grads, 0.0
 
@@ -251,7 +255,7 @@ class JITOptimizedOperations:
             grad_norm = float(grad_norm_array)
 
         # Reshape back to original structure
-        clipped_grads = {}
+        clipped_grads: Dict[str, Optional[mx.array]] = {}
         start_idx = 0
 
         for key, grad in grads.items():
@@ -297,7 +301,7 @@ def benchmark_jit_performance() -> Dict[str, Any]:
     entropy = mx.random.normal((batch_size,), dtype=mx.float32)
 
     # Regular computation
-    def regular_loss():
+    def regular_loss() -> mx.array:
         return jit_ppo_loss_core(
             values,
             log_probs,
@@ -315,7 +319,7 @@ def benchmark_jit_performance() -> Dict[str, Any]:
     # JIT optimized computation
     jit_ops = create_jit_optimizer()
 
-    def jit_loss():
+    def jit_loss() -> mx.array:
         return jit_ops.optimized_ppo_loss(
             values,
             log_probs,

@@ -5,8 +5,11 @@ This module provides pure functional loss computations that avoid
 parameter reloading and improve training efficiency.
 """
 
+from __future__ import annotations
+
+from typing import Any, Callable, Dict, Optional, Set, Tuple, cast
+
 import mlx.core as mx
-from typing import Dict, Tuple, Optional, Callable
 from mlx_baselines3.common.type_aliases import MlxArray
 
 
@@ -67,10 +70,15 @@ def ppo_functional_loss(
         value_loss = mx.mean(mx.maximum(value_loss_1, value_loss_2))
 
     # Entropy loss
-    entropy_loss = -mx.mean(entropy) if entropy is not None else 0.0
+    entropy_loss = (
+        -mx.mean(entropy) if entropy is not None else mx.array(0.0, dtype=mx.float32)
+    )
 
     # Total loss
-    return policy_loss + ent_coef * entropy_loss + vf_coef * value_loss
+    return cast(
+        mx.array,
+        policy_loss + ent_coef * entropy_loss + vf_coef * value_loss,
+    )
 
 
 def a2c_functional_loss(
@@ -113,10 +121,15 @@ def a2c_functional_loss(
     value_loss = mx.mean((rollout_data["returns"] - values) ** 2)
 
     # Entropy loss
-    entropy_loss = -mx.mean(entropy) if entropy is not None else 0.0
+    entropy_loss = (
+        -mx.mean(entropy) if entropy is not None else mx.array(0.0, dtype=mx.float32)
+    )
 
     # Total loss
-    return policy_loss + ent_coef * entropy_loss + vf_coef * value_loss
+    return cast(
+        mx.array,
+        policy_loss + ent_coef * entropy_loss + vf_coef * value_loss,
+    )
 
 
 def dqn_functional_loss(
@@ -152,11 +165,10 @@ def dqn_functional_loss(
     current_q_values = mx.take_along_axis(q_values, actions.astype(mx.int32), axis=-1)
     current_q_values = mx.squeeze(current_q_values, axis=-1)
 
-    # Target Q-values
-    with mx.stop_gradient():
-        next_q_values = q_network_apply_fn(target_params, next_obs)
-        max_next_q_values = mx.max(next_q_values, axis=-1)
-        target_q_values = rewards + gamma * (1 - terminated) * max_next_q_values
+    # Target Q-values (no gradient through target network)
+    next_q_values = mx.stop_gradient(q_network_apply_fn(target_params, next_obs))
+    max_next_q_values = mx.max(next_q_values, axis=-1)
+    target_q_values = rewards + gamma * (1 - terminated) * max_next_q_values
 
     # Loss computation
     if huber_loss:
@@ -216,13 +228,16 @@ def sac_functional_loss(
     actor_loss = mx.mean(alpha * new_log_probs - min_q_new)
 
     # Critic loss
-    with mx.stop_gradient():
-        next_actions, next_log_probs = policy_apply_fn(params, next_obs)
-        target_q1, target_q2 = critic_apply_fn(
-            target_critic_params, next_obs, next_actions
-        )
-        target_q = mx.minimum(target_q1, target_q2) - alpha * next_log_probs
-        target_q_values = rewards + gamma * (1 - terminated) * target_q
+    next_actions, next_log_probs = policy_apply_fn(params, next_obs)
+    next_actions = mx.stop_gradient(next_actions)
+    next_log_probs = mx.stop_gradient(next_log_probs)
+    target_q1, target_q2 = critic_apply_fn(
+        target_critic_params, next_obs, next_actions
+    )
+    target_q = mx.minimum(target_q1, target_q2) - alpha * next_log_probs
+    target_q_values = mx.stop_gradient(
+        rewards + gamma * (1 - terminated) * target_q
+    )
 
     current_q1, current_q2 = critic_apply_fn(params, obs, actions)
     critic1_loss = mx.mean((current_q1 - target_q_values) ** 2)
@@ -236,7 +251,7 @@ def sac_functional_loss(
 
 
 def batch_efficient_collate(
-    batch_list: list, device: str = "cpu"
+    batch_list: list[Dict[str, Any]], device: str = "cpu"
 ) -> Dict[str, mx.array]:
     """
     Efficiently collate a batch of samples into contiguous arrays.
@@ -255,7 +270,7 @@ def batch_efficient_collate(
 
     # Get keys from first sample
     keys = batch_list[0].keys()
-    batch_dict = {}
+    batch_dict: Dict[str, mx.array] = {}
 
     for key in keys:
         # Stack all samples for this key
@@ -278,7 +293,7 @@ def batch_efficient_collate(
 
 
 def ensure_float32_dtype(
-    arrays: Dict[str, mx.array], excluded_keys: set = None
+    arrays: Dict[str, mx.array], excluded_keys: Optional[Set[str]] = None
 ) -> Dict[str, mx.array]:
     """
     Ensure all arrays in dictionary are float32 unless excluded.
@@ -290,11 +305,11 @@ def ensure_float32_dtype(
     Returns:
         Dictionary with float32 arrays
     """
-    excluded_keys = excluded_keys or set()
-    result = {}
+    active_exclusions: Set[str] = excluded_keys or set()
+    result: Dict[str, mx.array] = {}
 
     for key, array in arrays.items():
-        if key in excluded_keys:
+        if key in active_exclusions:
             result[key] = array
         elif array.dtype != mx.float32:
             result[key] = array.astype(mx.float32)

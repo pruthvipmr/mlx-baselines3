@@ -3,9 +3,10 @@ MLX-specific utilities for device management, tensor operations, and helper
 functions.
 """
 
+import math
 import random
 import warnings
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any, Callable, Dict, Mapping, Optional, Tuple, Union
 
 import mlx.core as mx
 import numpy as np
@@ -66,7 +67,7 @@ def polyak_update(
     if not (0 < tau <= 1):
         raise ValueError(f"tau must be in (0, 1], got {tau}")
 
-    updated_params = {}
+    updated_params: Dict[str, mx.array] = {}
     for key in params.keys():
         if key not in target_params:
             warnings.warn(f"Key '{key}' found in params but not in target_params")
@@ -161,7 +162,9 @@ def mlx_to_numpy(arr: mx.array) -> np.ndarray:
     return np.array(arr)
 
 
-def get_linear_fn(start: float, end: float, end_fraction: float) -> callable:
+def get_linear_fn(
+    start: float, end: float, end_fraction: float
+) -> Callable[[float], float]:
     """
     Create a linear schedule function.
 
@@ -189,7 +192,9 @@ def get_linear_fn(start: float, end: float, end_fraction: float) -> callable:
     return func
 
 
-def get_schedule_fn(value_schedule: Union[float, str, callable]) -> callable:
+def get_schedule_fn(
+    value_schedule: Union[float, str, Callable[[float], float]]
+) -> Callable[[float], float]:
     """
     Transform schedule string/value to a schedule function.
 
@@ -202,17 +207,15 @@ def get_schedule_fn(value_schedule: Union[float, str, callable]) -> callable:
     """
     if callable(value_schedule):
         return value_schedule
-    elif isinstance(value_schedule, (int, float)):
+    if isinstance(value_schedule, (int, float)):
         # Constant value
         return lambda _: float(value_schedule)
-    elif isinstance(value_schedule, str):
+    if isinstance(value_schedule, str):
         if value_schedule == "linear":
             # Default linear schedule from 1.0 to 0.0
             return get_linear_fn(1.0, 0.0, 1.0)
-        else:
-            raise ValueError(f"Invalid schedule string: {value_schedule}")
-    else:
-        raise ValueError(f"Invalid schedule type: {type(value_schedule)}")
+        raise ValueError(f"Invalid schedule string: {value_schedule}")
+    raise ValueError(f"Invalid schedule type: {type(value_schedule)}")
 
 
 def update_learning_rate(optimizer: Any, learning_rate: float) -> None:
@@ -234,7 +237,7 @@ def update_learning_rate(optimizer: Any, learning_rate: float) -> None:
         )
 
 
-def clip_grad_norm(grads: Dict[str, mx.array], max_norm: float) -> float:
+def clip_grad_norm(grads: Dict[str, Optional[mx.array]], max_norm: float) -> float:
     """
     Clip gradients by global norm.
 
@@ -246,25 +249,25 @@ def clip_grad_norm(grads: Dict[str, mx.array], max_norm: float) -> float:
         Total gradient norm before clipping
     """
     # Compute total gradient norm
-    total_norm = 0.0
+    total_norm_sq = 0.0
     for grad in grads.values():
         if grad is not None:
-            total_norm += mx.sum(grad**2)
+            total_norm_sq += float(mx.sum(grad**2))
 
-    total_norm = float(mx.sqrt(total_norm))
+    total_norm = math.sqrt(total_norm_sq)
 
     # Clip gradients if necessary
     if total_norm > max_norm:
         clip_coef = max_norm / (total_norm + 1e-6)
-        for key in grads:
-            if grads[key] is not None:
-                grads[key] = grads[key] * clip_coef
+        for key, grad in list(grads.items()):
+            if grad is not None:
+                grads[key] = grad * clip_coef
 
     return total_norm
 
 
 def obs_as_mlx(
-    obs: Union[np.ndarray, mx.array, Dict[str, np.ndarray]],
+    obs: Union[np.ndarray, mx.array, Dict[str, Union[np.ndarray, mx.array]]],
 ) -> Union[mx.array, Dict[str, mx.array]]:
     """
     Convert observation(s) to MLX arrays.
@@ -277,19 +280,26 @@ def obs_as_mlx(
     """
     if isinstance(obs, mx.array):
         return obs  # Already an MLX array
-    elif isinstance(obs, np.ndarray):
+    if isinstance(obs, np.ndarray):
         return mx.array(obs)
-    elif isinstance(obs, dict):
-        return {
-            key: mx.array(val) if isinstance(val, np.ndarray) else val
-            for key, val in obs.items()
-        }
-    else:
-        raise ValueError(f"Unsupported observation type: {type(obs)}")
+    if isinstance(obs, dict):
+        converted: Dict[str, mx.array] = {}
+        for key, val in obs.items():
+            if isinstance(val, mx.array):
+                converted[key] = val
+            elif isinstance(val, np.ndarray):
+                converted[key] = mx.array(val)
+            else:
+                raise ValueError(
+                    f"Unsupported observation value type for key {key!r}: {type(val)}"
+                )
+        return converted
+    raise ValueError(f"Unsupported observation type: {type(obs)}")
 
 
 def is_vectorized_observation(
-    observation: Union[np.ndarray, Dict], observation_space
+    observation: Union[np.ndarray, Mapping[str, np.ndarray]],
+    observation_space: Union[np.ndarray, Mapping[str, np.ndarray]],
 ) -> bool:
     """
     Check if observation is vectorized (from multiple environments).
@@ -301,17 +311,22 @@ def is_vectorized_observation(
     Returns:
         True if observation is vectorized, False otherwise
     """
-    if isinstance(observation, dict):
+    if isinstance(observation, Mapping):
         if len(observation) == 0:
             return False
         # Check the first key
         first_key = next(iter(observation.keys()))
-        return observation[first_key].shape[0] != observation_space[first_key].shape[0]
-    else:
-        return observation.shape[0] != observation_space.shape[0]
+        obs_array = observation[first_key]
+        if not isinstance(observation_space, Mapping):
+            return False
+        ref_array = observation_space[first_key]
+        return bool(obs_array.shape[0] != ref_array.shape[0])
+    assert isinstance(observation, np.ndarray)
+    assert isinstance(observation_space, np.ndarray)
+    return bool(observation.shape[0] != observation_space.shape[0])
 
 
-def constant_fn(val: float) -> callable:
+def constant_fn(val: float) -> Callable[[float], float]:
     """
     Create a constant schedule function.
 

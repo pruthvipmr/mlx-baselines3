@@ -5,20 +5,34 @@ This module implements RolloutBuffer for on-policy algorithms (PPO, A2C) and
 ReplayBuffer for off-policy algorithms (SAC, TD3, DQN) with MLX integration.
 """
 
-from typing import Any, Dict, Generator, List, Optional, Union
+from typing import Any, Dict, Generator, List, Optional, Tuple, Union, cast
 
 import gymnasium as gym
 import numpy as np
 import mlx.core as mx
 
 from mlx_baselines3.common.type_aliases import (
-    MlxArray,
-    NumpyObsType,
-    NumpyActionType,
-    RolloutBatch,
-    ReplayBatch,
     GymSpace,
+    MlxArray,
+    NumpyActionType,
+    NumpyObsType,
+    ReplayBatch,
+    RolloutBatch,
+    TensorOrDict,
 )
+
+
+def _space_shape(space: GymSpace) -> Tuple[int, ...]:
+    shape = getattr(space, "shape", None)
+    if shape is None:
+        return ()
+    if isinstance(shape, tuple):
+        return tuple(int(dim) for dim in shape)
+    if isinstance(shape, list):
+        return tuple(int(dim) for dim in shape)
+    if isinstance(shape, int):
+        return (int(shape),)
+    return ()
 
 
 class BaseBuffer:
@@ -56,6 +70,9 @@ class BaseBuffer:
         self.pos = 0
         self.full = False
 
+        self.observations: Union[np.ndarray, Dict[str, np.ndarray]]
+        self.actions: np.ndarray
+
         # Initialize storage arrays
         self._setup_storage()
 
@@ -65,19 +82,25 @@ class BaseBuffer:
         if isinstance(self.observation_space, gym.spaces.Dict):
             self.observations = {}
             for key, subspace in self.observation_space.spaces.items():
-                obs_shape = (self.buffer_size, self.n_envs) + subspace.shape
+                obs_shape = (self.buffer_size, self.n_envs) + _space_shape(subspace)
                 self.observations[key] = np.zeros(obs_shape, dtype=subspace.dtype)
         else:
-            obs_shape = (self.buffer_size, self.n_envs) + self.observation_space.shape
-            self.observations = np.zeros(obs_shape, dtype=self.observation_space.dtype)
+            obs_shape = (self.buffer_size, self.n_envs) + _space_shape(
+                self.observation_space
+            )
+            dtype = getattr(self.observation_space, "dtype", np.float32)
+            self.observations = np.zeros(obs_shape, dtype=dtype)
 
         # Handle action space
         if isinstance(self.action_space, gym.spaces.Discrete):
             action_shape = (self.buffer_size, self.n_envs)
             self.actions = np.zeros(action_shape, dtype=np.int64)
         else:
-            action_shape = (self.buffer_size, self.n_envs) + self.action_space.shape
-            self.actions = np.zeros(action_shape, dtype=self.action_space.dtype)
+            action_shape = (self.buffer_size, self.n_envs) + _space_shape(
+                self.action_space
+            )
+            dtype = getattr(self.action_space, "dtype", np.float32)
+            self.actions = np.zeros(action_shape, dtype=dtype)
 
     def size(self) -> int:
         """Get the current size of the buffer."""
@@ -90,7 +113,7 @@ class BaseBuffer:
         self.pos = 0
         self.full = False
 
-    def _get_samples(self, batch_inds: np.ndarray) -> Dict[str, MlxArray]:
+    def _get_samples(self, batch_inds: np.ndarray) -> Dict[str, TensorOrDict]:
         """
         Get samples at specified indices and convert to MLX arrays.
 
@@ -102,19 +125,20 @@ class BaseBuffer:
         """
         # Convert observations to MLX
         if isinstance(self.observations, dict):
-            obs_batch = {}
-            for key, obs in self.observations.items():
-                obs_batch[key] = mx.array(obs[batch_inds])
+            obs_batch: Dict[str, MlxArray] = {
+                key: mx.array(obs[batch_inds]) for key, obs in self.observations.items()
+            }
         else:
             obs_batch = mx.array(self.observations[batch_inds])
 
         # Convert actions to MLX
         actions_batch = mx.array(self.actions[batch_inds])
 
-        return {
+        samples: Dict[str, TensorOrDict] = {
             "observations": obs_batch,
             "actions": actions_batch,
         }
+        return samples
 
 
 class RolloutBuffer(BaseBuffer):
@@ -189,16 +213,18 @@ class RolloutBuffer(BaseBuffer):
 
         # Store observations
         if isinstance(obs, dict):
+            obs_storage = cast(Dict[str, np.ndarray], self.observations)
             for key, obs_val in obs.items():
-                self.observations[key][self.pos] = obs_val.copy()
+                obs_storage[key][self.pos] = np.asarray(obs_val).copy()
         else:
-            self.observations[self.pos] = obs.copy()
+            obs_storage = cast(np.ndarray, self.observations)
+            obs_storage[self.pos] = np.asarray(obs).copy()
 
-        self.actions[self.pos] = action.copy()
-        self.rewards[self.pos] = reward.copy()
-        self.episode_starts[self.pos] = episode_start.copy()
-        self.values[self.pos] = value.copy()
-        self.log_probs[self.pos] = log_prob.copy()
+        self.actions[self.pos] = np.asarray(action).copy()
+        self.rewards[self.pos] = np.asarray(reward).copy()
+        self.episode_starts[self.pos] = np.asarray(episode_start).copy()
+        self.values[self.pos] = np.asarray(value).copy()
+        self.log_probs[self.pos] = np.asarray(log_prob).copy()
 
         self.pos += 1
         if self.pos == self.buffer_size:
@@ -284,9 +310,9 @@ class RolloutBuffer(BaseBuffer):
 
             # Get observations
             if isinstance(flat_obs, dict):
-                obs_batch = {}
-                for key, obs in flat_obs.items():
-                    obs_batch[key] = mx.array(obs[batch_inds])
+                obs_batch: TensorOrDict = {
+                    key: mx.array(obs[batch_inds]) for key, obs in flat_obs.items()
+                }
             else:
                 obs_batch = mx.array(flat_obs[batch_inds])
 
@@ -304,12 +330,15 @@ class RolloutBuffer(BaseBuffer):
     def _flatten_obs(self) -> Union[np.ndarray, Dict[str, np.ndarray]]:
         """Flatten observations for sampling."""
         if isinstance(self.observations, dict):
-            flat_obs = {}
-            for key, obs in self.observations.items():
-                flat_obs[key] = obs.reshape(-1, *obs.shape[2:])
+            obs_dict = cast(Dict[str, np.ndarray], self.observations)
+            flat_obs: Dict[str, np.ndarray] = {
+                key: obs.reshape(-1, *obs.shape[2:])
+                for key, obs in obs_dict.items()
+            }
             return flat_obs
         else:
-            return self.observations.reshape(-1, *self.observations.shape[2:])
+            obs_array = cast(np.ndarray, self.observations)
+            return obs_array.reshape(-1, *obs_array.shape[2:])
 
 
 class ReplayBuffer(BaseBuffer):
@@ -351,34 +380,41 @@ class ReplayBuffer(BaseBuffer):
         self.timeouts = np.zeros((self.buffer_size, self.n_envs), dtype=np.bool_)
         self.has_final_obs = np.zeros((self.buffer_size, self.n_envs), dtype=np.bool_)
 
+        self.next_observations: Optional[Union[np.ndarray, Dict[str, np.ndarray]]] = None
+        self.final_observations: Union[np.ndarray, Dict[str, np.ndarray]]
+
         # Store next observations unless optimizing memory
         if not self.optimize_memory_usage:
             if isinstance(self.observation_space, gym.spaces.Dict):
-                self.next_observations = {}
+                next_obs: Dict[str, np.ndarray] = {}
                 for key, subspace in self.observation_space.spaces.items():
-                    obs_shape = (self.buffer_size, self.n_envs) + subspace.shape
-                    self.next_observations[key] = np.zeros(
-                        obs_shape, dtype=subspace.dtype
+                    obs_shape = (self.buffer_size, self.n_envs) + _space_shape(
+                        subspace
                     )
+                    next_obs[key] = np.zeros(obs_shape, dtype=subspace.dtype)
+                self.next_observations = next_obs
             else:
                 obs_shape = (
                     self.buffer_size,
                     self.n_envs,
-                ) + self.observation_space.shape
-                self.next_observations = np.zeros(
-                    obs_shape, dtype=self.observation_space.dtype
-                )
+                ) + _space_shape(self.observation_space)
+                dtype = getattr(self.observation_space, "dtype", np.float32)
+                self.next_observations = np.zeros(obs_shape, dtype=dtype)
 
         if isinstance(self.observation_space, gym.spaces.Dict):
-            self.final_observations = {}
+            final_obs: Dict[str, np.ndarray] = {}
             for key, subspace in self.observation_space.spaces.items():
-                obs_shape = (self.buffer_size, self.n_envs) + subspace.shape
-                self.final_observations[key] = np.zeros(obs_shape, dtype=subspace.dtype)
+                obs_shape = (self.buffer_size, self.n_envs) + _space_shape(
+                    subspace
+                )
+                final_obs[key] = np.zeros(obs_shape, dtype=subspace.dtype)
+            self.final_observations = final_obs
         else:
-            obs_shape = (self.buffer_size, self.n_envs) + self.observation_space.shape
-            self.final_observations = np.zeros(
-                obs_shape, dtype=self.observation_space.dtype
+            obs_shape = (self.buffer_size, self.n_envs) + _space_shape(
+                self.observation_space
             )
+            dtype = getattr(self.observation_space, "dtype", np.float32)
+            self.final_observations = np.zeros(obs_shape, dtype=dtype)
 
     def add(
         self,
@@ -422,13 +458,15 @@ class ReplayBuffer(BaseBuffer):
 
         # Handle dictionary observations
         if isinstance(obs, dict):
+            obs_storage = cast(Dict[str, np.ndarray], self.observations)
             for key, obs_val in obs.items():
-                self.observations[key][self.pos] = obs_val.copy()
+                obs_storage[key][self.pos] = np.asarray(obs_val).copy()
         else:
-            self.observations[self.pos] = obs.copy()
+            obs_storage = cast(np.ndarray, self.observations)
+            obs_storage[self.pos] = np.asarray(obs).copy()
 
-        self.actions[self.pos] = action.copy()
-        self.rewards[self.pos] = reward.copy()
+        self.actions[self.pos] = np.asarray(action).copy()
+        self.rewards[self.pos] = np.asarray(reward).copy()
 
         final_observations: List[Optional[NumpyObsType]] = [None] * self.n_envs
         timeouts = np.zeros(self.n_envs, dtype=np.bool_)
@@ -457,24 +495,29 @@ class ReplayBuffer(BaseBuffer):
         has_final_obs = np.zeros(self.n_envs, dtype=np.bool_)
 
         if isinstance(self.observation_space, gym.spaces.Dict):
+            final_storage = cast(Dict[str, np.ndarray], self.final_observations)
             if not self.optimize_memory_usage:
-                for key, next_obs_val in next_obs.items():
-                    updated_next_obs = next_obs_val.copy()
+                if self.next_observations is None:
+                    raise RuntimeError("next_observations is unavailable")
+                next_storage = cast(Dict[str, np.ndarray], self.next_observations)
+                next_obs_dict = cast(Dict[str, np.ndarray], next_obs)
+                for key, next_obs_val in next_obs_dict.items():
+                    updated_next_obs = np.asarray(next_obs_val).copy()
                     for env_idx, final_obs in enumerate(final_observations):
-                        if final_obs is not None:
+                        if isinstance(final_obs, dict) and final_obs is not None:
                             updated_next_obs[env_idx] = np.asarray(final_obs[key])
                             has_final_obs[env_idx] = True
-                    self.next_observations[key][self.pos] = updated_next_obs
-            for key in self.final_observations:
-                final_array = self.final_observations[key][self.pos]
+                    next_storage[key][self.pos] = updated_next_obs
+            for key in final_storage:
+                final_array = final_storage[key][self.pos]
                 final_array[...] = 0
                 for env_idx, final_obs in enumerate(final_observations):
-                    if final_obs is not None:
+                    if isinstance(final_obs, dict) and final_obs is not None:
                         final_array[env_idx] = np.asarray(final_obs[key])
                         has_final_obs[env_idx] = True
         else:
             next_obs_array = np.asarray(next_obs).copy()
-            final_array = self.final_observations[self.pos]
+            final_array = cast(np.ndarray, self.final_observations)[self.pos]
             final_array[...] = 0
             for env_idx, final_obs in enumerate(final_observations):
                 if final_obs is not None:
@@ -482,7 +525,8 @@ class ReplayBuffer(BaseBuffer):
                     next_obs_array[env_idx] = np.asarray(final_obs)
                     has_final_obs[env_idx] = True
             if not self.optimize_memory_usage:
-                self.next_observations[self.pos] = next_obs_array
+                next_storage_arr = cast(np.ndarray, self.next_observations)
+                next_storage_arr[self.pos] = next_obs_array
 
         self.has_final_obs[self.pos] = has_final_obs
 
@@ -491,7 +535,7 @@ class ReplayBuffer(BaseBuffer):
             self.full = True
             self.pos = 0  # Circular buffer
 
-    def sample(self, batch_size: int, env=None) -> ReplayBatch:
+    def sample(self, batch_size: int, env: Optional[Any] = None) -> ReplayBatch:
         """
         Sample a batch of transitions randomly.
 
@@ -515,9 +559,10 @@ class ReplayBuffer(BaseBuffer):
 
         # Get observations
         if isinstance(self.observations, dict):
-            obs_batch = {}
-            for key, obs in self.observations.items():
-                obs_batch[key] = mx.array(obs[batch_inds, env_indices])
+            obs_batch: TensorOrDict = {
+                key: mx.array(obs[batch_inds, env_indices])
+                for key, obs in self.observations.items()
+            }
         else:
             obs_batch = mx.array(self.observations[batch_inds, env_indices])
 
@@ -526,16 +571,19 @@ class ReplayBuffer(BaseBuffer):
             # Compute next observations on the fly
             next_obs_batch = self._get_next_obs_optimized(batch_inds, env_indices, env)
         else:
+            if self.next_observations is None:
+                raise RuntimeError("next_observations is unavailable")
             if isinstance(self.next_observations, dict):
-                next_obs_batch = {}
-                for key, next_obs in self.next_observations.items():
-                    next_obs_batch[key] = mx.array(next_obs[batch_inds, env_indices])
+                next_obs_batch = {
+                    key: mx.array(next_obs[batch_inds, env_indices])
+                    for key, next_obs in self.next_observations.items()
+                }
             else:
                 next_obs_batch = mx.array(
                     self.next_observations[batch_inds, env_indices]
                 )
 
-        return {
+        batch: ReplayBatch = {
             "observations": obs_batch,
             "actions": mx.array(self.actions[batch_inds, env_indices]),
             "next_observations": next_obs_batch,
@@ -544,6 +592,7 @@ class ReplayBuffer(BaseBuffer):
             "truncated": mx.array(self.truncated[batch_inds, env_indices]),
             "timeouts": mx.array(self.timeouts[batch_inds, env_indices]),
         }
+        return batch
 
     def _get_next_obs_optimized(
         self, batch_inds: np.ndarray, env_indices: np.ndarray, env
@@ -568,21 +617,25 @@ class ReplayBuffer(BaseBuffer):
         has_final = self.has_final_obs[batch_inds, env_indices]
 
         if isinstance(self.observations, dict):
+            obs_dict = cast(Dict[str, np.ndarray], self.observations)
+            final_dict = cast(Dict[str, np.ndarray], self.final_observations)
             next_obs_batch = {}
-            for key, obs in self.observations.items():
+            for key, obs in obs_dict.items():
                 next_obs = obs[next_batch_inds, env_indices].copy()
                 # Zero-out terminal transitions
                 next_obs[terminated] = 0
                 if np.any(truncated & has_final):
-                    final_obs = self.final_observations[key][batch_inds, env_indices]
+                    final_obs = final_dict[key][batch_inds, env_indices]
                     mask = truncated & has_final
                     next_obs[mask] = final_obs[mask]
                 next_obs_batch[key] = mx.array(next_obs)
         else:
-            next_obs = self.observations[next_batch_inds, env_indices].copy()
+            obs_array = cast(np.ndarray, self.observations)
+            final_array = cast(np.ndarray, self.final_observations)
+            next_obs = obs_array[next_batch_inds, env_indices].copy()
             next_obs[terminated] = 0
             if np.any(truncated & has_final):
-                final_obs = self.final_observations[batch_inds, env_indices]
+                final_obs = final_array[batch_inds, env_indices]
                 mask = truncated & has_final
                 next_obs[mask] = final_obs[mask]
             next_obs_batch = mx.array(next_obs)

@@ -7,7 +7,9 @@ autograd system, maintaining optimizer state (like Adam moments) separately
 from model parameters.
 """
 
-from typing import Callable, Dict, Optional, Tuple, TypedDict, Union
+import math
+from typing import Any, Callable, Dict, Optional, Tuple, TypedDict, Union
+
 import mlx.core as mx
 
 
@@ -363,7 +365,7 @@ class SGDAdapter:
 def create_optimizer_adapter(
     optimizer_name: str,
     learning_rate: Union[float, Callable[[int], float]] = 1e-3,
-    **kwargs,
+    **kwargs: Any,
 ) -> Union[AdamAdapter, RMSPropAdapter, SGDAdapter]:
     """
     Factory function to create optimizer adapters.
@@ -395,8 +397,8 @@ def create_optimizer_adapter(
 
 
 def clip_grad_norm(
-    grads: Dict[str, mx.array], max_norm: float
-) -> Tuple[Dict[str, mx.array], float]:
+    grads: Dict[str, Optional[mx.array]], max_norm: float
+) -> Tuple[Dict[str, Optional[mx.array]], float]:
     """
     Clip gradients by global norm.
 
@@ -411,20 +413,18 @@ def clip_grad_norm(
     total_norm_squared = 0.0
     for grad in grads.values():
         if grad is not None:
-            total_norm_squared += mx.sum(grad**2)
-
-    total_norm = float(mx.sqrt(total_norm_squared))
+            total_norm_squared += float(mx.sum(grad**2))
+    total_norm = math.sqrt(total_norm_squared)
 
     # Clip gradients if necessary
     if total_norm > max_norm:
         clip_coef = max_norm / (total_norm + 1e-8)
-        clipped_grads = {
+        clipped_grads: Dict[str, Optional[mx.array]] = {
             key: grad * clip_coef if grad is not None else None
             for key, grad in grads.items()
         }
         return clipped_grads, total_norm
-    else:
-        return grads, total_norm
+    return grads, total_norm
 
 
 def compute_loss_and_grads(

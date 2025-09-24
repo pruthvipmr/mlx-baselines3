@@ -1,16 +1,16 @@
-"""
-Learning rate and hyperparameter schedules for MLX-Baselines3.
+"""Utility helpers for parameter schedules used across algorithms."""
 
-Provides schedule functions compatible with SB3 API for learning rates,
-clip ranges, and other hyperparameters that change during training.
-"""
-
-from typing import Callable, Union
+from __future__ import annotations
 
 import math
+from typing import Callable, Sequence, Union
 
 
-def constant_schedule(value: float) -> Callable[[float], float]:
+ProgressSchedule = Callable[[float], float]
+StepSchedule = Callable[[int], float]
+
+
+def constant_schedule(value: float) -> ProgressSchedule:
     """
     Create a constant schedule function.
 
@@ -27,9 +27,7 @@ def constant_schedule(value: float) -> Callable[[float], float]:
     return schedule_fn
 
 
-def linear_schedule(
-    initial_value: float, final_value: float = 0.0
-) -> Callable[[float], float]:
+def linear_schedule(initial_value: float, final_value: float = 0.0) -> ProgressSchedule:
     """
     Create a linear schedule function that interpolates between initial and
     final values.
@@ -52,8 +50,10 @@ def linear_schedule(
 
 
 def piecewise_schedule(
-    endpoints: list, values: list, interpolation: str = "linear"
-) -> Callable[[float], float]:
+    endpoints: Sequence[float],
+    values: Sequence[float],
+    interpolation: str = "linear",
+) -> ProgressSchedule:
     """
     Create a piecewise schedule function.
 
@@ -98,9 +98,7 @@ def piecewise_schedule(
     return schedule_fn
 
 
-def exponential_schedule(
-    initial_value: float, decay_rate: float = 0.95
-) -> Callable[[int], float]:
+def exponential_schedule(initial_value: float, decay_rate: float = 0.95) -> StepSchedule:
     """
     Create an exponential decay schedule.
 
@@ -119,8 +117,10 @@ def exponential_schedule(
 
 
 def cosine_annealing_schedule(
-    initial_value: float, min_value: float = 0.0, cycle_length: int = 1000
-) -> Callable[[int], float]:
+    initial_value: float,
+    min_value: float = 0.0,
+    cycle_length: int = 1000,
+) -> StepSchedule:
     """
     Create a cosine annealing schedule.
 
@@ -142,7 +142,7 @@ def cosine_annealing_schedule(
     return schedule_fn
 
 
-def get_schedule_fn(value: Union[float, str, Callable]) -> Callable:
+def get_schedule_fn(value: Union[float, str, ProgressSchedule]) -> ProgressSchedule:
     """
     Convert various schedule specifications to callable schedule functions.
 
@@ -162,12 +162,12 @@ def get_schedule_fn(value: Union[float, str, Callable]) -> Callable:
     """
     if callable(value):
         return value
-    elif isinstance(value, (int, float)):
+    if isinstance(value, (int, float)):
         return constant_schedule(float(value))
-    elif isinstance(value, str):
+    if isinstance(value, str):
         if value == "constant":
             raise ValueError("Constant schedule requires a numeric value")
-        elif value.startswith("linear"):
+        if value.startswith("linear"):
             # Parse linear schedule like "linear_0.001" or "linear_0.001_0.0"
             parts = value.split("_")
             if len(parts) == 2:
@@ -184,7 +184,7 @@ def get_schedule_fn(value: Union[float, str, Callable]) -> Callable:
                 except ValueError:
                     pass
             raise ValueError(f"Invalid linear schedule specification: {value}")
-        elif value.startswith("piecewise"):
+        if value.startswith("piecewise"):
             # Parse piecewise schedule like "piecewise_0.0:0.1_0.5:0.05_1.0:0.01"
             parts = value.split("_")[1:]  # Remove "piecewise" prefix
             if len(parts) < 2:
@@ -201,14 +201,12 @@ def get_schedule_fn(value: Union[float, str, Callable]) -> Callable:
                     raise ValueError(f"Invalid piecewise schedule format: {value}")
 
             return piecewise_schedule(endpoints, values)
-        else:
-            raise ValueError(f"Unsupported schedule string: {value}")
-    else:
-        raise ValueError(f"Unsupported schedule type: {type(value)}")
+        raise ValueError(f"Unsupported schedule string: {value}")
+    raise ValueError(f"Unsupported schedule type: {type(value)}")
 
 
 def make_progress_schedule(
-    schedule_fn: Callable[[float], float],
+    schedule_fn: ProgressSchedule,
 ) -> Callable[[int, int], float]:
     """
     Convert a progress-based schedule (taking progress ∈ [0, 1]) to a
@@ -232,19 +230,19 @@ def make_progress_schedule(
 
 
 # Common schedule presets for convenience
-def get_linear_schedule(initial_value: float, final_value: float = 0.0):
+def get_linear_schedule(initial_value: float, final_value: float = 0.0) -> ProgressSchedule:
     """Convenience function for creating linear decay schedules."""
     return linear_schedule(initial_value, final_value)
 
 
-def get_constant_schedule(value: float):
+def get_constant_schedule(value: float) -> ProgressSchedule:
     """Convenience function for creating constant schedules."""
     return constant_schedule(value)
 
 
 def schedule_from_string(
     schedule_str: str, default_value: float = 1.0
-) -> Callable[[float], float]:
+) -> ProgressSchedule:
     """
     Create a schedule from string specification, SB3-style.
 
@@ -264,16 +262,15 @@ def schedule_from_string(
     """
     if schedule_str == "constant":
         return constant_schedule(default_value)
-    elif schedule_str == "linear":
+    if schedule_str == "linear":
         return linear_schedule(default_value, 0.0)
-    else:
-        return get_schedule_fn(schedule_str)
+    return get_schedule_fn(schedule_str)
 
 
 def apply_schedule_to_param(
-    param_value: Union[float, str, Callable],
+    param_value: Union[float, str, ProgressSchedule],
     progress_remaining: float,
-    default_value: float = None,
+    default_value: float | None = None,
 ) -> float:
     """
     Apply a schedule to get the current parameter value.
@@ -291,13 +288,12 @@ def apply_schedule_to_param(
     """
     if callable(param_value):
         return param_value(progress_remaining)
-    elif isinstance(param_value, (int, float)):
+    if isinstance(param_value, (int, float)):
         return float(param_value)
-    elif isinstance(param_value, str):
+    if isinstance(param_value, str):
         if default_value is not None:
             schedule_fn = schedule_from_string(param_value, default_value)
         else:
             schedule_fn = get_schedule_fn(param_value)
         return schedule_fn(progress_remaining)
-    else:
-        raise ValueError(f"Unsupported parameter type: {type(param_value)}")
+    raise ValueError(f"Unsupported parameter type: {type(param_value)}")

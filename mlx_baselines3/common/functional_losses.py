@@ -145,7 +145,7 @@ def dqn_functional_loss(
     actions = batch_data["actions"]
     rewards = batch_data["rewards"]
     next_obs = batch_data["next_observations"]
-    dones = batch_data["dones"]
+    terminated = batch_data["terminated"]
 
     # Current Q-values
     q_values = q_network_apply_fn(params, obs)
@@ -156,7 +156,7 @@ def dqn_functional_loss(
     with mx.stop_gradient():
         next_q_values = q_network_apply_fn(target_params, next_obs)
         max_next_q_values = mx.max(next_q_values, axis=-1)
-        target_q_values = rewards + gamma * (1 - dones) * max_next_q_values
+        target_q_values = rewards + gamma * (1 - terminated) * max_next_q_values
 
     # Loss computation
     if huber_loss:
@@ -205,7 +205,7 @@ def sac_functional_loss(
     actions = batch_data["actions"]
     rewards = batch_data["rewards"]
     next_obs = batch_data["next_observations"]
-    dones = batch_data["dones"]
+    terminated = batch_data["terminated"]
 
     alpha = mx.exp(log_alpha)
 
@@ -222,7 +222,7 @@ def sac_functional_loss(
             target_critic_params, next_obs, next_actions
         )
         target_q = mx.minimum(target_q1, target_q2) - alpha * next_log_probs
-        target_q_values = rewards + gamma * (1 - dones) * target_q
+        target_q_values = rewards + gamma * (1 - terminated) * target_q
 
     current_q1, current_q2 = critic_apply_fn(params, obs, actions)
     critic1_loss = mx.mean((current_q1 - target_q_values) ** 2)

@@ -8,6 +8,7 @@ import pytest
 import mlx.core as mx
 import tempfile
 import os
+import types
 
 from mlx_baselines3.dqn import DQN
 
@@ -252,18 +253,19 @@ class TestDQNTraining:
             obs = env.reset()[0]
             for _ in range(10):
                 action = env.action_space.sample()
-                next_obs, reward, done, truncated, info = env.step(action)
+                next_obs, reward, terminated, truncated, info = env.step(action)
 
                 model.replay_buffer.add(
                     obs.reshape(1, -1),
                     next_obs.reshape(1, -1),
                     np.array([action]).reshape(1, -1),
                     np.array([reward]),
-                    np.array([done]),
+                    np.array([terminated]),
+                    np.array([truncated]),
                     [info],
                 )
 
-                if done or truncated:
+                if terminated or truncated:
                     break
                 obs = next_obs
 
@@ -299,6 +301,157 @@ class TestDQNTraining:
             pytest.fail(f"Learning failed: {e}")
 
         env.close()
+
+
+class SingleStepTimeLimitEnv(gym.Env):
+    """Environment that always truncates after one step."""
+
+    metadata = {}
+
+    def __init__(self):
+        super().__init__()
+        self.observation_space = gym.spaces.Box(
+            low=-1.0, high=1.0, shape=(1,), dtype=np.float32
+        )
+        self.action_space = gym.spaces.Discrete(2)
+
+    def reset(self, *, seed=None, options=None):
+        super().reset(seed=seed)
+        return np.array([0.0], dtype=np.float32), {}
+
+    def step(self, action):
+        obs = np.array([1.0], dtype=np.float32)
+        reward = 1.0
+        terminated = False
+        truncated = True
+        info = {"TimeLimit.truncated": True}
+        return obs, reward, terminated, truncated, info
+
+
+class SingleStepTerminalEnv(gym.Env):
+    """Environment that terminates after one step."""
+
+    metadata = {}
+
+    def __init__(self):
+        super().__init__()
+        self.observation_space = gym.spaces.Box(
+            low=-1.0, high=1.0, shape=(1,), dtype=np.float32
+        )
+        self.action_space = gym.spaces.Discrete(2)
+
+    def reset(self, *, seed=None, options=None):
+        super().reset(seed=seed)
+        return np.array([0.0], dtype=np.float32), {}
+
+    def step(self, action):
+        obs = np.array([1.0], dtype=np.float32)
+        reward = 1.0
+        terminated = True
+        truncated = False
+        info = {}
+        return obs, reward, terminated, truncated, info
+
+
+class TestDQNTerminationHandling:
+    """Ensure DQN handles terminated and truncated transitions correctly."""
+
+    @staticmethod
+    def _constant_predict(values):
+        values = np.array(values, dtype=np.float32)
+
+        def _predict(self, observations):
+            batch_size = observations.shape[0]
+            repeated = np.repeat(values[np.newaxis, :], batch_size, axis=0)
+            return mx.array(repeated)
+
+        return _predict
+
+    def _prepare_model(self, env, gamma=0.5):
+        model = DQN(
+            "MlpPolicy",
+            env,
+            buffer_size=10,
+            learning_starts=0,
+            batch_size=1,
+            gamma=gamma,
+            verbose=0,
+        )
+        model.max_grad_norm = None
+        return model
+
+    def _patch_networks(self, model, monkeypatch):
+        model.q_net.predict_values = types.MethodType(
+            self._constant_predict([2.0, 0.0]), model.q_net
+        )
+        model.q_net_target.predict_values = types.MethodType(
+            self._constant_predict([3.0, 1.0]), model.q_net_target
+        )
+
+        losses = []
+
+        def fake_compute_loss_and_grads(loss_fn, params):
+            loss = loss_fn(params)
+            losses.append(float(loss))
+            grads = {k: mx.zeros_like(v) for k, v in params.items()}
+            return loss, grads
+
+        monkeypatch.setattr(
+            "mlx_baselines3.dqn.dqn.compute_loss_and_grads",
+            fake_compute_loss_and_grads,
+        )
+
+        return losses
+
+    def test_bootstrap_on_time_limit(self, monkeypatch):
+        env = SingleStepTimeLimitEnv()
+        model = self._prepare_model(env)
+        losses = self._patch_networks(model, monkeypatch)
+
+        obs, _ = env.reset()
+        action = 0
+        next_obs, reward, terminated, truncated, info = env.step(action)
+
+        model.replay_buffer.add(
+            obs.reshape(1, -1),
+            next_obs.reshape(1, -1),
+            np.array([action]).reshape(1, -1),
+            np.array([reward], dtype=np.float32),
+            np.array([terminated], dtype=np.bool_),
+            np.array([truncated], dtype=np.bool_),
+            [info],
+        )
+
+        model.train(gradient_steps=1, batch_size=1)
+
+        env.close()
+        assert losses, "Expected a loss value to be recorded"
+        assert losses[0] == pytest.approx(0.125, rel=1e-6)
+
+    def test_no_bootstrap_on_termination(self, monkeypatch):
+        env = SingleStepTerminalEnv()
+        model = self._prepare_model(env)
+        losses = self._patch_networks(model, monkeypatch)
+
+        obs, _ = env.reset()
+        action = 0
+        next_obs, reward, terminated, truncated, info = env.step(action)
+
+        model.replay_buffer.add(
+            obs.reshape(1, -1),
+            next_obs.reshape(1, -1),
+            np.array([action]).reshape(1, -1),
+            np.array([reward], dtype=np.float32),
+            np.array([terminated], dtype=np.bool_),
+            np.array([truncated], dtype=np.bool_),
+            [info],
+        )
+
+        model.train(gradient_steps=1, batch_size=1)
+
+        env.close()
+        assert losses, "Expected a loss value to be recorded"
+        assert losses[0] == pytest.approx(0.5, rel=1e-6)
 
 
 class TestDQNSaveLoad:

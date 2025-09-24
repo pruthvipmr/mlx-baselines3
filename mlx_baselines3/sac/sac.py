@@ -300,7 +300,7 @@ class SAC(OffPolicyAlgorithm):
             actions = mx.array(replay_data["actions"])
             next_observations = obs_as_mlx(replay_data["next_observations"])
             rewards = mx.array(replay_data["rewards"]).flatten()
-            dones = mx.array(replay_data["dones"]).flatten()
+            terminated = mx.array(replay_data["terminated"]).flatten()
 
             # Current entropy coefficient
             if self.ent_coef == "auto":
@@ -310,7 +310,12 @@ class SAC(OffPolicyAlgorithm):
 
             # Update critics
             critic_loss = self._update_critics(
-                observations, actions, next_observations, rewards, dones, ent_coef
+                observations,
+                actions,
+                next_observations,
+                rewards,
+                terminated,
+                ent_coef,
             )
             critic_losses.append(float(critic_loss))
 
@@ -349,7 +354,7 @@ class SAC(OffPolicyAlgorithm):
         actions: mx.array,
         next_observations: mx.array,
         rewards: mx.array,
-        dones: mx.array,
+        terminated: mx.array,
         ent_coef: mx.array,
     ) -> mx.array:
         """Update critic networks."""
@@ -379,10 +384,8 @@ class SAC(OffPolicyAlgorithm):
             target_q = target_q - ent_coef * next_log_probs.reshape(-1, 1)
 
             # Compute target values with Bellman backup
-            target_q = (
-                rewards.reshape(-1, 1)
-                + (1 - dones.reshape(-1, 1)) * self.gamma * target_q
-            )
+            not_terminal = 1 - terminated.reshape(-1, 1).astype(mx.float32)
+            target_q = rewards.reshape(-1, 1) + not_terminal * self.gamma * target_q
 
             # Compute losses for both critics
             critic_losses = []
@@ -592,13 +595,27 @@ class SAC(OffPolicyAlgorithm):
             if self.n_envs == 1 and not hasattr(self.env, "num_envs"):
                 step_action = actions if np.asarray(actions).ndim == 1 else actions[0]
                 obs_, reward, terminated, truncated, info = self.env.step(step_action)
-                done = np.array([terminated or truncated])
+                terminated_array = np.array([terminated], dtype=np.bool_)
+                truncated_array = np.array([truncated], dtype=np.bool_)
+                done = np.array([terminated or truncated], dtype=np.bool_)
                 new_obs = np.expand_dims(obs_, 0)
                 rewards = np.expand_dims(np.array([reward], dtype=np.float32), 0)
                 infos = [info]
             else:
-                new_obs, rewards, done, infos = self.env.step(actions)
-                done = np.array(done)
+                step_output = self.env.step(actions)
+                if len(step_output) == 5:
+                    new_obs, rewards, terminated_vals, truncated_vals, infos = step_output
+                    terminated_array = np.array(terminated_vals, dtype=np.bool_)
+                    truncated_array = np.array(truncated_vals, dtype=np.bool_)
+                    done = np.array(terminated_array | truncated_array, dtype=np.bool_)
+                else:
+                    new_obs, rewards, done_vals, infos = step_output
+                    done = np.array(done_vals, dtype=np.bool_)
+                    truncated_array = np.array(
+                        [info.get("TimeLimit.truncated", False) for info in infos],
+                        dtype=np.bool_,
+                    )
+                    terminated_array = np.array(done & ~truncated_array, dtype=np.bool_)
 
             # Ensure batch dimensions for replay buffer
             if not isinstance(new_obs, dict) and new_obs.ndim == len(
@@ -622,7 +639,13 @@ class SAC(OffPolicyAlgorithm):
 
             # Store transition in replay buffer
             self.replay_buffer.add(
-                last_obs_batched, new_obs, actions_batched, rewards, done, infos
+                last_obs_batched,
+                new_obs,
+                actions_batched,
+                rewards,
+                terminated_array,
+                truncated_array,
+                infos,
             )
 
             self._last_obs = new_obs

@@ -404,9 +404,11 @@ class TestReplayBuffer:
         assert buffer.buffer_size == 100
         assert buffer.n_envs == 1
         assert buffer.rewards.shape == (100, 1)
-        assert buffer.dones.shape == (100, 1)
+        assert buffer.terminated.shape == (100, 1)
         assert buffer.truncated.shape == (100, 1)
         assert buffer.timeouts.shape == (100, 1)
+        assert buffer.final_observations.shape == (100, 1, 4)
+        assert buffer.has_final_obs.shape == (100, 1)
         assert hasattr(buffer, "next_observations")
 
     def test_memory_optimization(self):
@@ -437,10 +439,11 @@ class TestReplayBuffer:
         next_obs = np.random.randn(n_envs, 3).astype(np.float32)
         action = np.array([0, 1])
         reward = np.array([1.0, -0.5])
-        done = np.array([False, True])
+        terminated = np.array([False, True])
+        truncated = np.array([False, False])
         infos = [{}, {}]
 
-        buffer.add(obs, next_obs, action, reward, done, infos)
+        buffer.add(obs, next_obs, action, reward, terminated, truncated, infos)
 
         assert buffer.pos == 1
         assert buffer.size() == 1
@@ -448,7 +451,8 @@ class TestReplayBuffer:
         assert np.array_equal(buffer.next_observations[0], next_obs)
         assert np.array_equal(buffer.actions[0], action)
         assert np.array_equal(buffer.rewards[0], reward)
-        assert np.array_equal(buffer.dones[0], done)
+        assert np.array_equal(buffer.terminated[0], terminated)
+        assert np.array_equal(buffer.truncated[0], truncated)
 
     def test_circular_buffer(self):
         """Test circular buffer behavior."""
@@ -465,10 +469,11 @@ class TestReplayBuffer:
             next_obs = np.array([[float(i + 1)]])
             action = np.array([i % 2])
             reward = np.array([float(i)])
-            done = np.array([False])
+            terminated = np.array([False])
+            truncated = np.array([False])
             infos = [{}]
 
-            buffer.add(obs, next_obs, action, reward, done, infos)
+            buffer.add(obs, next_obs, action, reward, terminated, truncated, infos)
 
         assert buffer.full is True
         assert buffer.pos == 2  # Should wrap around
@@ -494,10 +499,11 @@ class TestReplayBuffer:
             next_obs = np.random.randn(n_envs, 2).astype(np.float32)
             action = np.array([i % 2])
             reward = np.array([float(i)])
-            done = np.array([False])
+            terminated = np.array([False])
+            truncated = np.array([False])
             infos = [{}]
 
-            buffer.add(obs, next_obs, action, reward, done, infos)
+            buffer.add(obs, next_obs, action, reward, terminated, truncated, infos)
 
         # Sample a batch
         batch_size = 3
@@ -508,7 +514,7 @@ class TestReplayBuffer:
         assert "actions" in batch
         assert "next_observations" in batch
         assert "rewards" in batch
-        assert "dones" in batch
+        assert "terminated" in batch
         assert "truncated" in batch
         assert "timeouts" in batch
 
@@ -517,7 +523,7 @@ class TestReplayBuffer:
         assert batch["actions"].shape[0] == batch_size
         assert batch["next_observations"].shape[0] == batch_size
         assert batch["rewards"].shape[0] == batch_size
-        assert batch["dones"].shape[0] == batch_size
+        assert batch["terminated"].shape[0] == batch_size
         assert batch["truncated"].shape[0] == batch_size
         assert batch["timeouts"].shape[0] == batch_size
 
@@ -526,7 +532,7 @@ class TestReplayBuffer:
         assert isinstance(batch["actions"], mx.array)
         assert isinstance(batch["next_observations"], mx.array)
         assert isinstance(batch["rewards"], mx.array)
-        assert isinstance(batch["dones"], mx.array)
+        assert isinstance(batch["terminated"], mx.array)
         assert isinstance(batch["truncated"], mx.array)
         assert isinstance(batch["timeouts"], mx.array)
 
@@ -566,10 +572,11 @@ class TestReplayBuffer:
             }
             action = np.array([i % 4])
             reward = np.array([1.0])
-            done = np.array([False])
+            terminated = np.array([False])
+            truncated = np.array([False])
             infos = [{}]
 
-            buffer.add(obs, next_obs, action, reward, done, infos)
+            buffer.add(obs, next_obs, action, reward, terminated, truncated, infos)
 
         # Sample and test
         batch = buffer.sample(2)
@@ -600,10 +607,11 @@ class TestReplayBuffer:
             next_obs = np.array([[float(i + 1), float(i + 1)]])  # Not stored
             action = np.array([0])
             reward = np.array([1.0])
-            done = np.array([i == 2])  # Last one is done
+            terminated = np.array([i == 2])  # Last one is terminal
+            truncated = np.array([False])
             infos = [{}]
 
-            buffer.add(obs, next_obs, action, reward, done, infos)
+            buffer.add(obs, next_obs, action, reward, terminated, truncated, infos)
 
         # Sample and check that next observations are computed correctly
         batch = buffer.sample(2)
@@ -611,6 +619,69 @@ class TestReplayBuffer:
         # Should have computed next observations from stored observations
         assert isinstance(batch["next_observations"], mx.array)
         assert batch["next_observations"].shape == (2, 2)
+
+    def test_final_observation_overrides_next_obs(self):
+        """Final observations from infos should replace sampled next obs."""
+        obs_space = gym.spaces.Box(low=-1, high=1, shape=(2,), dtype=np.float32)
+        action_space = gym.spaces.Discrete(2)
+
+        buffer = ReplayBuffer(3, obs_space, action_space, n_envs=1)
+
+        obs = np.array([[0.0, 0.0]], dtype=np.float32)
+        reset_next = np.array([[99.0, 99.0]], dtype=np.float32)
+        final_obs = np.array([1.0, 2.0], dtype=np.float32)
+        action = np.array([0])
+        reward = np.array([1.0], dtype=np.float32)
+        terminated = np.array([False])
+        truncated = np.array([True])
+        infos = [
+            {
+                "TimeLimit.truncated": True,
+                "terminal_observation": final_obs.copy(),
+            }
+        ]
+
+        buffer.add(obs, reset_next, action, reward, terminated, truncated, infos)
+
+        batch = buffer.sample(1)
+        sampled_next = np.array(batch["next_observations"])[0]
+        assert np.allclose(sampled_next, final_obs)
+        assert buffer.has_final_obs[0, 0]
+        assert np.allclose(buffer.final_observations[0, 0], final_obs)
+
+    def test_final_observation_memory_optimized(self):
+        """Final observations should be used when memory optimization is enabled."""
+        obs_space = gym.spaces.Box(low=-1, high=1, shape=(2,), dtype=np.float32)
+        action_space = gym.spaces.Discrete(2)
+
+        buffer = ReplayBuffer(
+            buffer_size=3,
+            observation_space=obs_space,
+            action_space=action_space,
+            optimize_memory_usage=True,
+            n_envs=1,
+        )
+
+        obs = np.array([[0.0, 0.0]], dtype=np.float32)
+        reset_next = np.array([[42.0, 42.0]], dtype=np.float32)
+        final_obs = np.array([5.0, -5.0], dtype=np.float32)
+        action = np.array([0])
+        reward = np.array([1.0], dtype=np.float32)
+        terminated = np.array([False])
+        truncated = np.array([True])
+        infos = [
+            {
+                "TimeLimit.truncated": True,
+                "terminal_observation": final_obs.copy(),
+            }
+        ]
+
+        buffer.add(obs, reset_next, action, reward, terminated, truncated, infos)
+
+        batch = buffer.sample(1)
+        sampled_next = np.array(batch["next_observations"])[0]
+        assert np.allclose(sampled_next, final_obs)
+        assert buffer.has_final_obs[0, 0]
 
     def test_truncated_and_timeout_handling(self):
         """Test handling of truncated and timeout flags in ReplayBuffer."""
@@ -625,17 +696,19 @@ class TestReplayBuffer:
             next_obs = np.random.randn(1, 2).astype(np.float32)
             action = np.array([i % 2])
             reward = np.array([1.0])
-            done = np.array([False])
+            terminated = np.array([False])
+            truncated = np.array([False])
 
             # Create info dicts with different truncation/timeout settings
             if i == 0:
+                truncated = np.array([True])
                 infos = [{"TimeLimit.truncated": True}]
             elif i == 1:
                 infos = [{"_timeout": True}]
             else:
                 infos = [{}]  # No special flags
 
-            buffer.add(obs, next_obs, action, reward, done, infos)
+            buffer.add(obs, next_obs, action, reward, terminated, truncated, infos)
 
         # Sample and check that truncation/timeout flags are preserved
         batch = buffer.sample(3)

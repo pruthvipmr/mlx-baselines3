@@ -274,13 +274,27 @@ class DQN(OffPolicyAlgorithm):
             if self.n_envs == 1 and not hasattr(self.env, "num_envs"):
                 step_action = actions if np.asarray(actions).ndim == 0 else actions[0]
                 obs_, reward, terminated, truncated, info = self.env.step(step_action)
-                done = np.array([terminated or truncated])
+                terminated_array = np.array([terminated], dtype=np.bool_)
+                truncated_array = np.array([truncated], dtype=np.bool_)
+                done = np.array([terminated or truncated], dtype=np.bool_)
                 new_obs = np.expand_dims(obs_, 0)
                 rewards = np.expand_dims(np.array([reward], dtype=np.float32), 0)
                 infos = [info]
             else:
-                new_obs, rewards, done, infos = self.env.step(actions)
-                done = np.array(done)
+                step_output = self.env.step(actions)
+                if len(step_output) == 5:
+                    new_obs, rewards, terminated_vals, truncated_vals, infos = step_output
+                    terminated_array = np.array(terminated_vals, dtype=np.bool_)
+                    truncated_array = np.array(truncated_vals, dtype=np.bool_)
+                    done = np.array(terminated_array | truncated_array, dtype=np.bool_)
+                else:
+                    new_obs, rewards, done_vals, infos = step_output
+                    done = np.array(done_vals, dtype=np.bool_)
+                    truncated_array = np.array(
+                        [info.get("TimeLimit.truncated", False) for info in infos],
+                        dtype=np.bool_,
+                    )
+                    terminated_array = np.array(done & ~truncated_array, dtype=np.bool_)
 
             # Ensure batch dimensions for replay buffer
             if not isinstance(new_obs, dict) and new_obs.ndim == len(
@@ -304,7 +318,13 @@ class DQN(OffPolicyAlgorithm):
 
             # Store transition in replay buffer
             self.replay_buffer.add(
-                last_obs_batched, new_obs, actions_batched, rewards, done, infos
+                last_obs_batched,
+                new_obs,
+                actions_batched,
+                rewards,
+                terminated_array,
+                truncated_array,
+                infos,
             )
 
             self._last_obs = new_obs
@@ -357,11 +377,9 @@ class DQN(OffPolicyAlgorithm):
             next_q_values = mx.max(next_q_values, axis=1)
 
             # Compute target Q-values using Bellman equation
+            not_terminal = 1 - replay_data["terminated"].astype(mx.float32)
             target_q_values = (
-                replay_data["rewards"]
-                + (1 - replay_data["dones"].astype(mx.float32))
-                * self.gamma
-                * next_q_values
+                replay_data["rewards"] + not_terminal * self.gamma * next_q_values
             )
 
             # Define pure loss function for gradient computation

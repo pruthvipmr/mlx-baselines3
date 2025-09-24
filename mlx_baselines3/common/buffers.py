@@ -346,9 +346,10 @@ class ReplayBuffer(BaseBuffer):
 
         # Additional storage for off-policy data
         self.rewards = np.zeros((self.buffer_size, self.n_envs), dtype=np.float32)
-        self.dones = np.zeros((self.buffer_size, self.n_envs), dtype=np.bool_)
+        self.terminated = np.zeros((self.buffer_size, self.n_envs), dtype=np.bool_)
         self.truncated = np.zeros((self.buffer_size, self.n_envs), dtype=np.bool_)
         self.timeouts = np.zeros((self.buffer_size, self.n_envs), dtype=np.bool_)
+        self.has_final_obs = np.zeros((self.buffer_size, self.n_envs), dtype=np.bool_)
 
         # Store next observations unless optimizing memory
         if not self.optimize_memory_usage:
@@ -368,13 +369,25 @@ class ReplayBuffer(BaseBuffer):
                     obs_shape, dtype=self.observation_space.dtype
                 )
 
+        if isinstance(self.observation_space, gym.spaces.Dict):
+            self.final_observations = {}
+            for key, subspace in self.observation_space.spaces.items():
+                obs_shape = (self.buffer_size, self.n_envs) + subspace.shape
+                self.final_observations[key] = np.zeros(obs_shape, dtype=subspace.dtype)
+        else:
+            obs_shape = (self.buffer_size, self.n_envs) + self.observation_space.shape
+            self.final_observations = np.zeros(
+                obs_shape, dtype=self.observation_space.dtype
+            )
+
     def add(
         self,
         obs: NumpyObsType,
         next_obs: NumpyObsType,
         action: NumpyActionType,
         reward: np.ndarray,
-        done: np.ndarray,
+        terminated: np.ndarray,
+        truncated: np.ndarray,
         infos: List[Dict[str, Any]],
     ) -> None:
         """
@@ -385,8 +398,9 @@ class ReplayBuffer(BaseBuffer):
             next_obs: Next observation
             action: Action taken
             reward: Reward received
-            done: Episode termination flag
-            infos: Additional information (may contain TimeLimit.truncated and _timeout)
+            terminated: Episode termination flags
+            truncated: Truncation flags (e.g. TimeLimit)
+            infos: Additional information (may contain TimeLimit.truncated, final_observation and _timeout)
         """
         # Handle dictionary observations
         if isinstance(obs, dict):
@@ -395,29 +409,65 @@ class ReplayBuffer(BaseBuffer):
         else:
             self.observations[self.pos] = obs.copy()
 
-        if not self.optimize_memory_usage:
-            if isinstance(next_obs, dict):
-                for key, next_obs_val in next_obs.items():
-                    self.next_observations[key][self.pos] = next_obs_val.copy()
-            else:
-                self.next_observations[self.pos] = next_obs.copy()
+        terminated = np.asarray(terminated, dtype=np.bool_).reshape(self.n_envs)
+        truncated = np.asarray(truncated, dtype=np.bool_).reshape(self.n_envs)
 
         self.actions[self.pos] = action.copy()
         self.rewards[self.pos] = reward.copy()
-        self.dones[self.pos] = done.copy()
 
-        # Extract truncation and timeout information from infos
-        truncated = np.zeros(self.n_envs, dtype=np.bool_)
+        final_observations: List[Optional[NumpyObsType]] = [None] * self.n_envs
         timeouts = np.zeros(self.n_envs, dtype=np.bool_)
 
         for i, info in enumerate(infos):
+            if info is None:
+                continue
             if "TimeLimit.truncated" in info:
-                truncated[i] = info["TimeLimit.truncated"]
+                truncated[i] = truncated[i] or bool(info["TimeLimit.truncated"])
             if "_timeout" in info:
-                timeouts[i] = info["_timeout"]
+                timeouts[i] = bool(info["_timeout"])
+            final_obs = info.get("final_observation")
+            if final_obs is None:
+                final_obs = info.get("terminal_observation")
+            if isinstance(final_obs, tuple):
+                final_obs = final_obs[0]
+            if final_obs is not None:
+                final_observations[i] = final_obs
 
+        self.terminated[self.pos] = terminated
         self.truncated[self.pos] = truncated
         self.timeouts[self.pos] = timeouts
+
+        has_final_obs = np.zeros(self.n_envs, dtype=np.bool_)
+
+        if isinstance(self.observation_space, gym.spaces.Dict):
+            if not self.optimize_memory_usage:
+                for key, next_obs_val in next_obs.items():
+                    updated_next_obs = next_obs_val.copy()
+                    for env_idx, final_obs in enumerate(final_observations):
+                        if final_obs is not None:
+                            updated_next_obs[env_idx] = np.asarray(final_obs[key])
+                            has_final_obs[env_idx] = True
+                    self.next_observations[key][self.pos] = updated_next_obs
+            for key in self.final_observations:
+                final_array = self.final_observations[key][self.pos]
+                final_array[...] = 0
+                for env_idx, final_obs in enumerate(final_observations):
+                    if final_obs is not None:
+                        final_array[env_idx] = np.asarray(final_obs[key])
+                        has_final_obs[env_idx] = True
+        else:
+            next_obs_array = np.asarray(next_obs).copy()
+            final_array = self.final_observations[self.pos]
+            final_array[...] = 0
+            for env_idx, final_obs in enumerate(final_observations):
+                if final_obs is not None:
+                    final_array[env_idx] = np.asarray(final_obs)
+                    next_obs_array[env_idx] = np.asarray(final_obs)
+                    has_final_obs[env_idx] = True
+            if not self.optimize_memory_usage:
+                self.next_observations[self.pos] = next_obs_array
+
+        self.has_final_obs[self.pos] = has_final_obs
 
         self.pos += 1
         if self.pos == self.buffer_size:
@@ -472,7 +522,7 @@ class ReplayBuffer(BaseBuffer):
             "observations": obs_batch,
             "actions": mx.array(self.actions[batch_inds, env_indices]),
             "next_observations": next_obs_batch,
-            "dones": mx.array(self.dones[batch_inds, env_indices]),
+            "terminated": mx.array(self.terminated[batch_inds, env_indices]),
             "rewards": mx.array(self.rewards[batch_inds, env_indices]),
             "truncated": mx.array(self.truncated[batch_inds, env_indices]),
             "timeouts": mx.array(self.timeouts[batch_inds, env_indices]),
@@ -496,19 +546,28 @@ class ReplayBuffer(BaseBuffer):
         # next_obs is the current obs at the next timestep
         next_batch_inds = (batch_inds + 1) % self.buffer_size
 
-        # Check if any of the next indices are invalid (episode boundaries)
-        valid_mask = ~self.dones[batch_inds, env_indices]
+        terminated = self.terminated[batch_inds, env_indices]
+        truncated = self.truncated[batch_inds, env_indices]
+        has_final = self.has_final_obs[batch_inds, env_indices]
 
         if isinstance(self.observations, dict):
             next_obs_batch = {}
             for key, obs in self.observations.items():
                 next_obs = obs[next_batch_inds, env_indices].copy()
-                # For invalid transitions, use zeros (will be masked anyway)
-                next_obs[~valid_mask] = 0
+                # Zero-out terminal transitions
+                next_obs[terminated] = 0
+                if np.any(truncated & has_final):
+                    final_obs = self.final_observations[key][batch_inds, env_indices]
+                    mask = truncated & has_final
+                    next_obs[mask] = final_obs[mask]
                 next_obs_batch[key] = mx.array(next_obs)
         else:
             next_obs = self.observations[next_batch_inds, env_indices].copy()
-            next_obs[~valid_mask] = 0
+            next_obs[terminated] = 0
+            if np.any(truncated & has_final):
+                final_obs = self.final_observations[batch_inds, env_indices]
+                mask = truncated & has_final
+                next_obs[mask] = final_obs[mask]
             next_obs_batch = mx.array(next_obs)
 
         return next_obs_batch

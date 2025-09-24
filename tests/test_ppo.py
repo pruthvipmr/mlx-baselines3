@@ -2,10 +2,11 @@
 Tests for PPO algorithm implementation.
 """
 
-import gymnasium as gym
-import numpy as np
 import pytest
-import mlx.core as mx
+
+gym = pytest.importorskip("gymnasium")
+np = pytest.importorskip("numpy")
+mx = pytest.importorskip("mlx.core")
 
 from mlx_baselines3.ppo import PPO, PPOPolicy
 from mlx_baselines3.common.vec_env import make_vec_env
@@ -194,6 +195,71 @@ class TestPPOTraining:
 
         # Check that training occurred
         assert model._n_updates > initial_n_updates
+
+        env.close()
+
+    def test_schedule_progress_remaining_single_update(self):
+        """Ensure schedules use SB3 progress_remaining semantics once per update."""
+
+        env = make_vec_env("CartPole-v1", n_envs=1)
+
+        lr_calls = []
+        clip_calls = []
+        clip_vf_calls = []
+
+        def lr_schedule(progress_remaining: float) -> float:
+            lr_calls.append(progress_remaining)
+            return 3e-4 * progress_remaining
+
+        def clip_schedule(progress_remaining: float) -> float:
+            clip_calls.append(progress_remaining)
+            return 0.2 * progress_remaining
+
+        def clip_vf_schedule(progress_remaining: float) -> float:
+            clip_vf_calls.append(progress_remaining)
+            return 0.3 * progress_remaining
+
+        model = PPO(
+            "MlpPolicy",
+            env,
+            learning_rate=lr_schedule,
+            clip_range=clip_schedule,
+            clip_range_vf=clip_vf_schedule,
+            n_steps=8,
+            batch_size=4,
+            n_epochs=1,
+            verbose=0,
+        )
+
+        model._last_obs = env.reset()
+        model._last_episode_starts = np.ones((env.num_envs,), dtype=bool)
+
+        model.collect_rollouts(
+            env, None, model.rollout_buffer, n_rollout_steps=model.n_steps
+        )
+
+        total_timesteps = model.n_steps * 4
+        model._total_timesteps = total_timesteps
+        model._update_current_progress_remaining(model.num_timesteps, total_timesteps)
+
+        # Ignore schedule calls triggered during model initialization
+        lr_calls.clear()
+        clip_calls.clear()
+        clip_vf_calls.clear()
+
+        model.train()
+
+        expected_progress_remaining = 1.0 - model.num_timesteps / total_timesteps
+
+        assert lr_calls == [pytest.approx(expected_progress_remaining)]
+        assert clip_calls == [pytest.approx(expected_progress_remaining)]
+        assert clip_vf_calls == [pytest.approx(expected_progress_remaining)]
+
+        expected_lr = 3e-4 * expected_progress_remaining
+        current_lr = model.policy.optimizer.learning_rate
+        if hasattr(current_lr, "item"):
+            current_lr = float(current_lr)
+        assert current_lr == pytest.approx(expected_lr)
 
         env.close()
 

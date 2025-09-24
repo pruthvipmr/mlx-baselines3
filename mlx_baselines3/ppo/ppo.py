@@ -65,8 +65,8 @@ class PPO(OnPolicyAlgorithm):
         n_epochs: int = 10,
         gamma: float = 0.99,
         gae_lambda: float = 0.95,
-        clip_range: Union[float, Schedule] = 0.2,
-        clip_range_vf: Optional[Union[float, Schedule]] = None,
+        clip_range: Union[float, str, Schedule] = 0.2,
+        clip_range_vf: Optional[Union[float, str, Schedule]] = None,
         ent_coef: Union[float, str, Schedule] = 0.0,
         vf_coef: float = 0.5,
         max_grad_norm: float = 0.5,
@@ -151,10 +151,11 @@ class PPO(OnPolicyAlgorithm):
         # Create learning rate schedule function
         lr_schedule = get_schedule_fn(self.learning_rate)
 
-        # Create optimizer adapter (default to Adam)
+        # Initialize optimizer adapter (default to Adam) with starting LR
+        initial_lr = float(lr_schedule(1.0))
         self.optimizer_adapter = create_optimizer_adapter(
             optimizer_name="adam",
-            learning_rate=lr_schedule,
+            learning_rate=initial_lr,
             betas=(0.9, 0.999),
             eps=1e-8,
             weight_decay=0.0,
@@ -209,7 +210,7 @@ class PPO(OnPolicyAlgorithm):
 
     def _get_schedule_value(self, schedule: Union[float, str, Schedule]) -> float:
         """Get current value from schedule or return constant."""
-        return apply_schedule_to_param(schedule, 1.0 - self._current_progress_remaining)
+        return apply_schedule_to_param(schedule, self._current_progress_remaining)
 
     def collect_rollouts(
         self,
@@ -619,6 +620,8 @@ class PPO(OnPolicyAlgorithm):
         if hasattr(optimizer, "learning_rate"):
             new_lr = self.lr_schedule(self._current_progress_remaining)
             optimizer.learning_rate = new_lr
+            if self.optimizer_adapter is not None:
+                self.optimizer_adapter.learning_rate = float(new_lr)
 
     def _get_save_data(self) -> Dict[str, Any]:
         """Get algorithm-specific data for saving."""

@@ -5,11 +5,12 @@ Provides schedule functions compatible with SB3 API for learning rates,
 clip ranges, and other hyperparameters that change during training.
 """
 
-from typing import Union, Callable
-import numpy as np
+from typing import Callable, Union
+
+import math
 
 
-def constant_schedule(value: float) -> Callable[[int], float]:
+def constant_schedule(value: float) -> Callable[[float], float]:
     """
     Create a constant schedule function.
 
@@ -20,7 +21,7 @@ def constant_schedule(value: float) -> Callable[[int], float]:
         Schedule function that always returns the constant value
     """
 
-    def schedule_fn(step: int) -> float:
+    def schedule_fn(_: float) -> float:
         return value
 
     return schedule_fn
@@ -34,18 +35,18 @@ def linear_schedule(
     final values.
 
     Args:
-        initial_value: Starting value (at progress=0.0)
-        final_value: Ending value (at progress=1.0)
+        initial_value: Starting value (at progress_remaining=1.0)
+        final_value: Ending value (at progress_remaining=0.0)
 
     Returns:
-        Schedule function that takes progress [0.0, 1.0] and returns an
-        interpolated value
+        Schedule function that takes ``progress_remaining`` in ``[0.0, 1.0]``
+        and returns an interpolated value
     """
 
-    def schedule_fn(progress: float) -> float:
-        # Ensure progress is in [0, 1]
-        progress = max(0.0, min(1.0, progress))
-        return initial_value + progress * (final_value - initial_value)
+    def schedule_fn(progress_remaining: float) -> float:
+        # Ensure progress remaining is in [0, 1]
+        progress_remaining = max(0.0, min(1.0, progress_remaining))
+        return final_value + progress_remaining * (initial_value - final_value)
 
     return schedule_fn
 
@@ -57,12 +58,14 @@ def piecewise_schedule(
     Create a piecewise schedule function.
 
     Args:
-        endpoints: List of progress points [0.0, ..., 1.0] where values change
+        endpoints: List of training progress points ``[0.0, ..., 1.0]`` where
+            values change (0.0=start, 1.0=end)
         values: List of values at each endpoint (same length as endpoints)
         interpolation: Type of interpolation ("linear", "constant")
 
     Returns:
-        Schedule function that interpolates between the specified points
+        Schedule function that interpolates between the specified points using
+        ``progress_remaining`` semantics
     """
     if len(endpoints) != len(values):
         raise ValueError("endpoints and values must have the same length")
@@ -70,8 +73,11 @@ def piecewise_schedule(
     if endpoints[0] != 0.0 or endpoints[-1] != 1.0:
         raise ValueError("endpoints must start at 0.0 and end at 1.0")
 
-    def schedule_fn(progress: float) -> float:
-        progress = max(0.0, min(1.0, progress))
+    def schedule_fn(progress_remaining: float) -> float:
+        progress_remaining = max(0.0, min(1.0, progress_remaining))
+
+        # Convert to forward progress (0.0=start, 1.0=end)
+        progress = 1.0 - progress_remaining
 
         # Handle exact endpoint match for final point
         if progress == 1.0:
@@ -130,7 +136,7 @@ def cosine_annealing_schedule(
     def schedule_fn(step: int) -> float:
         cycle_position = step % cycle_length
         progress = cycle_position / cycle_length
-        cosine_factor = 0.5 * (1 + np.cos(np.pi * progress))
+        cosine_factor = 0.5 * (1 + math.cos(math.pi * progress))
         return min_value + (initial_value - min_value) * cosine_factor
 
     return schedule_fn
@@ -149,7 +155,7 @@ def get_schedule_fn(value: Union[float, str, Callable]) -> Callable:
         value: Schedule specification (float, string, or callable)
 
     Returns:
-        Callable schedule function that takes progress in [0, 1]
+        Callable schedule function that takes ``progress_remaining`` in ``[0, 1]``
 
     Raises:
         ValueError: If the schedule specification is not supported
@@ -219,7 +225,8 @@ def make_progress_schedule(
         if total_steps <= 0:
             return schedule_fn(1.0)
         progress = min(1.0, current_step / total_steps)
-        return schedule_fn(progress)
+        progress_remaining = max(0.0, 1.0 - progress)
+        return schedule_fn(progress_remaining)
 
     return step_schedule_fn
 
@@ -253,7 +260,7 @@ def schedule_from_string(
         default_value: Default value for schedules that don't specify initial value
 
     Returns:
-        Schedule function that takes progress in [0, 1]
+        Schedule function that takes ``progress_remaining`` in ``[0, 1]``
     """
     if schedule_str == "constant":
         return constant_schedule(default_value)
@@ -265,7 +272,7 @@ def schedule_from_string(
 
 def apply_schedule_to_param(
     param_value: Union[float, str, Callable],
-    progress: float,
+    progress_remaining: float,
     default_value: float = None,
 ) -> float:
     """
@@ -276,14 +283,14 @@ def apply_schedule_to_param(
 
     Args:
         param_value: The parameter value (float, string, or callable)
-        progress: Training progress in [0, 1]
+        progress_remaining: Remaining training progress in [0, 1]
         default_value: Default value if param_value is a string without value
 
     Returns:
         Current parameter value
     """
     if callable(param_value):
-        return param_value(progress)
+        return param_value(progress_remaining)
     elif isinstance(param_value, (int, float)):
         return float(param_value)
     elif isinstance(param_value, str):
@@ -291,6 +298,6 @@ def apply_schedule_to_param(
             schedule_fn = schedule_from_string(param_value, default_value)
         else:
             schedule_fn = get_schedule_fn(param_value)
-        return schedule_fn(progress)
+        return schedule_fn(progress_remaining)
     else:
         raise ValueError(f"Unsupported parameter type: {type(param_value)}")

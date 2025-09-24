@@ -204,12 +204,15 @@ class DQN(OffPolicyAlgorithm):
             progress = 0.0
         else:
             exploration_steps = int(self.exploration_fraction * self._total_timesteps)
-            if self.num_timesteps >= exploration_steps:
+            if exploration_steps <= 0:
+                progress = 1.0
+            elif self.num_timesteps >= exploration_steps:
                 progress = 1.0
             else:
                 progress = self.num_timesteps / exploration_steps
 
-        return self.exploration_schedule(progress)
+        progress_remaining = max(0.0, 1.0 - progress)
+        return float(self.exploration_schedule(progress_remaining))
 
     def learn(
         self,
@@ -283,7 +286,13 @@ class DQN(OffPolicyAlgorithm):
             else:
                 step_output = self.env.step(actions)
                 if len(step_output) == 5:
-                    new_obs, rewards, terminated_vals, truncated_vals, infos = step_output
+                    (
+                        new_obs,
+                        rewards,
+                        terminated_vals,
+                        truncated_vals,
+                        infos,
+                    ) = step_output
                     terminated_array = np.array(terminated_vals, dtype=np.bool_)
                     truncated_array = np.array(truncated_vals, dtype=np.bool_)
                     done = np.array(terminated_array | truncated_array, dtype=np.bool_)

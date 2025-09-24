@@ -587,14 +587,24 @@ class BaseAlgorithm(ABC):
             optimizers = [optimizers]
 
         # Get current learning rate from schedule
-        current_lr = self.lr_schedule(self._current_progress_remaining)
+        current_lr = float(self.lr_schedule(self._current_progress_remaining))
 
         # Update each optimizer
         for optimizer in optimizers:
-            if hasattr(optimizer, "learning_rate"):
+            if hasattr(optimizer, "set_current_learning_rate"):
+                optimizer.set_current_learning_rate(current_lr)
+            elif hasattr(optimizer, "learning_rate"):
                 optimizer.learning_rate = current_lr
             elif hasattr(optimizer, "lr"):
                 optimizer.lr = current_lr
+
+        # Update optimizer adapter if present
+        if hasattr(self, "optimizer_adapter") and self.optimizer_adapter is not None:
+            adapter = self.optimizer_adapter
+            if hasattr(adapter, "set_current_learning_rate"):
+                adapter.set_current_learning_rate(current_lr)
+            elif hasattr(adapter, "learning_rate"):
+                adapter.learning_rate = current_lr
 
     def _is_vectorized_observation(
         self, observation: Union[np.ndarray, Dict], observation_space

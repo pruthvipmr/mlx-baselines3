@@ -338,8 +338,8 @@ class TestSchedules:
         schedule = linear_schedule(1.0, 0.0)
 
         # Should interpolate between initial and final values
-        assert schedule(0.0) == 1.0
-        assert schedule(1.0) == 0.0
+        assert schedule(1.0) == 1.0
+        assert schedule(0.0) == 0.0
         assert abs(schedule(0.5) - 0.5) < 1e-6
 
     def test_exponential_schedule(self):

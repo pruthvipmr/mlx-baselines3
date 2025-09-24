@@ -7,7 +7,7 @@ autograd system, maintaining optimizer state (like Adam moments) separately
 from model parameters.
 """
 
-from typing import Dict, Tuple, TypedDict, Union, Callable
+from typing import Callable, Dict, Optional, Tuple, TypedDict, Union
 import mlx.core as mx
 
 
@@ -49,6 +49,7 @@ class AdamAdapter:
         self.eps = eps
         self.weight_decay = weight_decay
         self.beta1, self.beta2 = betas
+        self._manual_lr: Optional[float] = None
 
     def init_state(self, params: Dict[str, mx.array]) -> OptimizerState:
         """
@@ -84,10 +85,12 @@ class AdamAdapter:
             Tuple of (updated_params, updated_state)
         """
         # Get current learning rate (support schedules)
-        if callable(self.learning_rate):
-            current_lr = self.learning_rate(state["step"])
+        if self._manual_lr is not None:
+            current_lr = self._manual_lr
+        elif callable(self.learning_rate):
+            current_lr = float(self.learning_rate(state["step"]))
         else:
-            current_lr = self.learning_rate
+            current_lr = float(self.learning_rate)
 
         # Increment step count
         new_step = state["step"] + 1
@@ -134,6 +137,10 @@ class AdamAdapter:
 
         return new_params, new_state
 
+    def set_current_learning_rate(self, learning_rate: float) -> None:
+        """Manually override the learning rate used during updates."""
+        self._manual_lr = float(learning_rate)
+
 
 class RMSPropAdapter:
     """
@@ -163,6 +170,7 @@ class RMSPropAdapter:
         self.alpha = alpha
         self.eps = eps
         self.weight_decay = weight_decay
+        self._manual_lr: Optional[float] = None
 
     def init_state(self, params: Dict[str, mx.array]) -> OptimizerState:
         """
@@ -201,10 +209,12 @@ class RMSPropAdapter:
             Tuple of (updated_params, updated_state)
         """
         # Get current learning rate
-        if callable(self.learning_rate):
-            current_lr = self.learning_rate(state["step"])
+        if self._manual_lr is not None:
+            current_lr = self._manual_lr
+        elif callable(self.learning_rate):
+            current_lr = float(self.learning_rate(state["step"]))
         else:
-            current_lr = self.learning_rate
+            current_lr = float(self.learning_rate)
 
         new_step = state["step"] + 1
         new_params = {}
@@ -235,6 +245,10 @@ class RMSPropAdapter:
 
         return new_params, new_state
 
+    def set_current_learning_rate(self, learning_rate: float) -> None:
+        """Manually override the learning rate used during updates."""
+        self._manual_lr = float(learning_rate)
+
 
 class SGDAdapter:
     """
@@ -260,6 +274,7 @@ class SGDAdapter:
         self.learning_rate = learning_rate
         self.momentum = momentum
         self.weight_decay = weight_decay
+        self._manual_lr: Optional[float] = None
 
     def init_state(self, params: Dict[str, mx.array]) -> OptimizerState:
         """
@@ -301,10 +316,12 @@ class SGDAdapter:
             Tuple of (updated_params, updated_state)
         """
         # Get current learning rate
-        if callable(self.learning_rate):
-            current_lr = self.learning_rate(state["step"])
+        if self._manual_lr is not None:
+            current_lr = self._manual_lr
+        elif callable(self.learning_rate):
+            current_lr = float(self.learning_rate(state["step"]))
         else:
-            current_lr = self.learning_rate
+            current_lr = float(self.learning_rate)
 
         new_step = state["step"] + 1
         new_params = {}
@@ -337,6 +354,10 @@ class SGDAdapter:
         new_state = OptimizerState(step=new_step, m=new_m, v={})
 
         return new_params, new_state
+
+    def set_current_learning_rate(self, learning_rate: float) -> None:
+        """Manually override the learning rate used during updates."""
+        self._manual_lr = float(learning_rate)
 
 
 def create_optimizer_adapter(

@@ -4,9 +4,13 @@ Tests for PPO algorithm implementation.
 
 import pytest
 
-gym = pytest.importorskip("gymnasium")
-np = pytest.importorskip("numpy")
-mx = pytest.importorskip("mlx.core")
+try:
+    import gymnasium as gym
+    import numpy as np
+    import mlx.core as mx
+except ModuleNotFoundError as exc:
+    missing_dep = getattr(exc, "name", str(exc))
+    pytest.skip(f"Missing optional dependency: {missing_dep}", allow_module_level=True)
 
 from mlx_baselines3.ppo import PPO, PPOPolicy
 from mlx_baselines3.common.vec_env import make_vec_env

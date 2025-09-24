@@ -342,37 +342,50 @@ class VecNormalize(VecEnvWrapper):
         self.epsilon = state["epsilon"]
         self.returns = state.get("returns", np.zeros(self.num_envs))
 
-    @classmethod
-    def load(cls, path: str, venv: VecEnv) -> "VecNormalize":
+    def load(self, path: str, venv: Optional[VecEnv] = None) -> "VecNormalize":
         """
-        Load VecNormalize from file and wrap the given environment.
+        Load VecNormalize parameters.
+
+        When called on an instance, loads normalization statistics into the
+        existing wrapper. When called on the class, a ``VecEnv`` must be
+        provided and a new ``VecNormalize`` instance is returned, matching the
+        Stable Baselines 3 API.
 
         Args:
             path: Path to the saved parameters
-            venv: Environment to wrap
+            venv: Environment to wrap when called on the class
 
         Returns:
-            New VecNormalize instance with loaded parameters
+            The VecNormalize wrapper with loaded parameters
         """
-        with open(path, "rb") as f:
-            state = pickle.load(f)
 
-        # Create new instance
-        vec_normalize = cls(venv)
+        if isinstance(self, type):
+            cls = self
+            if venv is None:
+                raise TypeError("VecNormalize.load() missing required argument: 'venv'")
 
-        # Restore state
-        vec_normalize.obs_rms = state["obs_rms"]
-        vec_normalize.ret_rms = state["ret_rms"]
-        vec_normalize.training = state["training"]
-        vec_normalize.norm_obs = state["norm_obs"]
-        vec_normalize.norm_reward = state["norm_reward"]
-        vec_normalize.clip_obs = state["clip_obs"]
-        vec_normalize.clip_reward = state["clip_reward"]
-        vec_normalize.gamma = state["gamma"]
-        vec_normalize.epsilon = state["epsilon"]
-        vec_normalize.returns = state.get("returns", np.zeros(vec_normalize.num_envs))
+            with open(path, "rb") as f:
+                state = pickle.load(f)
 
-        return vec_normalize
+            vec_normalize = cls(venv)
+            vec_normalize.obs_rms = state["obs_rms"]
+            vec_normalize.ret_rms = state["ret_rms"]
+            vec_normalize.training = state["training"]
+            vec_normalize.norm_obs = state["norm_obs"]
+            vec_normalize.norm_reward = state["norm_reward"]
+            vec_normalize.clip_obs = state["clip_obs"]
+            vec_normalize.clip_reward = state["clip_reward"]
+            vec_normalize.gamma = state["gamma"]
+            vec_normalize.epsilon = state["epsilon"]
+            vec_normalize.returns = state.get(
+                "returns", np.zeros(vec_normalize.num_envs)
+            )
+
+            return vec_normalize
+
+        # Instance method: load state into existing wrapper
+        self.load_state(path)
+        return self
 
     def get_attr(
         self, attr_name: str, indices: Optional[List[int]] = None

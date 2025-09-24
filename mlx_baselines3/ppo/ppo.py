@@ -25,7 +25,6 @@ from mlx_baselines3.common.optimizers import (
     compute_loss_and_grads,
 )
 from mlx_baselines3.common.schedules import apply_schedule_to_param
-from mlx_baselines3.common.schedules import get_schedule_fn
 
 
 class PPO(OnPolicyAlgorithm):
@@ -148,14 +147,16 @@ class PPO(OnPolicyAlgorithm):
         if self.verbose >= 1:
             print("Setting up optimizer adapter...")
 
-        # Create learning rate schedule function
-        lr_schedule = get_schedule_fn(self.learning_rate)
+        if callable(self.learning_rate):
+            adapter_learning_rate = self.learning_rate
+        elif isinstance(self.learning_rate, (int, float)):
+            adapter_learning_rate = float(self.learning_rate)
+        else:
+            adapter_learning_rate = self.lr_schedule
 
-        # Initialize optimizer adapter (default to Adam) with starting LR
-        initial_lr = float(lr_schedule(1.0))
         self.optimizer_adapter = create_optimizer_adapter(
             optimizer_name="adam",
-            learning_rate=initial_lr,
+            learning_rate=adapter_learning_rate,
             betas=(0.9, 0.999),
             eps=1e-8,
             weight_decay=0.0,
@@ -617,11 +618,7 @@ class PPO(OnPolicyAlgorithm):
 
     def _update_learning_rate(self, optimizer):
         """Update learning rate in the optimizer."""
-        if hasattr(optimizer, "learning_rate"):
-            new_lr = self.lr_schedule(self._current_progress_remaining)
-            optimizer.learning_rate = new_lr
-            if self.optimizer_adapter is not None:
-                self.optimizer_adapter.learning_rate = float(new_lr)
+        super()._update_learning_rate(optimizer)
 
     def _get_save_data(self) -> Dict[str, Any]:
         """Get algorithm-specific data for saving."""

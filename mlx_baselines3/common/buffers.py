@@ -386,9 +386,9 @@ class ReplayBuffer(BaseBuffer):
         next_obs: NumpyObsType,
         action: NumpyActionType,
         reward: np.ndarray,
-        terminated: np.ndarray,
-        truncated: np.ndarray,
-        infos: List[Dict[str, Any]],
+        terminated: Union[np.ndarray, np.bool_, bool],
+        truncated: Optional[Union[np.ndarray, np.bool_, bool]] = None,
+        infos: Optional[List[Dict[str, Any]]] = None,
     ) -> None:
         """
         Add one step of data to the buffer.
@@ -399,18 +399,33 @@ class ReplayBuffer(BaseBuffer):
             action: Action taken
             reward: Reward received
             terminated: Episode termination flags
-            truncated: Truncation flags (e.g. TimeLimit)
-            infos: Additional information (may contain TimeLimit.truncated, final_observation and _timeout)
+            truncated: Optional truncation flags (e.g. TimeLimit)
+            infos: Additional information (may contain TimeLimit.truncated,
+                final_observation, and _timeout)
         """
+        if infos is None and isinstance(truncated, list):
+            if all(isinstance(item, dict) for item in truncated):
+                infos = truncated
+                truncated = None
+
+        if infos is None:
+            infos = [{} for _ in range(self.n_envs)]
+
+        terminated_array = np.asarray(terminated, dtype=np.bool_).reshape(self.n_envs)
+        if truncated is None:
+            truncated_array = np.array(
+                [info.get("TimeLimit.truncated", False) for info in infos],
+                dtype=np.bool_,
+            )
+        else:
+            truncated_array = np.asarray(truncated, dtype=np.bool_).reshape(self.n_envs)
+
         # Handle dictionary observations
         if isinstance(obs, dict):
             for key, obs_val in obs.items():
                 self.observations[key][self.pos] = obs_val.copy()
         else:
             self.observations[self.pos] = obs.copy()
-
-        terminated = np.asarray(terminated, dtype=np.bool_).reshape(self.n_envs)
-        truncated = np.asarray(truncated, dtype=np.bool_).reshape(self.n_envs)
 
         self.actions[self.pos] = action.copy()
         self.rewards[self.pos] = reward.copy()
@@ -422,7 +437,9 @@ class ReplayBuffer(BaseBuffer):
             if info is None:
                 continue
             if "TimeLimit.truncated" in info:
-                truncated[i] = truncated[i] or bool(info["TimeLimit.truncated"])
+                truncated_array[i] = truncated_array[i] or bool(
+                    info["TimeLimit.truncated"]
+                )
             if "_timeout" in info:
                 timeouts[i] = bool(info["_timeout"])
             final_obs = info.get("final_observation")
@@ -433,8 +450,8 @@ class ReplayBuffer(BaseBuffer):
             if final_obs is not None:
                 final_observations[i] = final_obs
 
-        self.terminated[self.pos] = terminated
-        self.truncated[self.pos] = truncated
+        self.terminated[self.pos] = terminated_array
+        self.truncated[self.pos] = truncated_array
         self.timeouts[self.pos] = timeouts
 
         has_final_obs = np.zeros(self.n_envs, dtype=np.bool_)

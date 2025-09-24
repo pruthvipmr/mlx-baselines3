@@ -4,21 +4,29 @@ Test schedule functionality for MLX-Baselines3.
 Tests hyperparameter schedules like learning rate, clip range, entropy coefficient, etc.
 """
 
+import importlib.util
+from pathlib import Path
+
 import pytest
-import numpy as np
-from mlx_baselines3.common.schedules import (
-    constant_schedule,
-    linear_schedule,
-    piecewise_schedule,
-    exponential_schedule,
-    cosine_annealing_schedule,
-    get_schedule_fn,
-    schedule_from_string,
-    apply_schedule_to_param,
-    make_progress_schedule,
-    get_linear_schedule,
-    get_constant_schedule,
-)
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+SCHEDULES_PATH = PROJECT_ROOT / "mlx_baselines3" / "common" / "schedules.py"
+spec = importlib.util.spec_from_file_location("mlx_schedules", SCHEDULES_PATH)
+schedules = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+spec.loader.exec_module(schedules)
+
+constant_schedule = schedules.constant_schedule
+linear_schedule = schedules.linear_schedule
+piecewise_schedule = schedules.piecewise_schedule
+exponential_schedule = schedules.exponential_schedule
+cosine_annealing_schedule = schedules.cosine_annealing_schedule
+get_schedule_fn = schedules.get_schedule_fn
+schedule_from_string = schedules.schedule_from_string
+apply_schedule_to_param = schedules.apply_schedule_to_param
+make_progress_schedule = schedules.make_progress_schedule
+get_linear_schedule = schedules.get_linear_schedule
+get_constant_schedule = schedules.get_constant_schedule
 
 
 class TestBasicSchedules:
@@ -37,23 +45,20 @@ class TestBasicSchedules:
         """Test linear schedule interpolates correctly."""
         schedule = linear_schedule(1.0, 0.0)
 
-        # Test endpoints
-        assert schedule(0.0) == 1.0
-        assert schedule(1.0) == 0.0
-
-        # Test interpolation
-        assert abs(schedule(0.5) - 0.5) < 1e-6
-        assert abs(schedule(0.25) - 0.75) < 1e-6
-        assert abs(schedule(0.75) - 0.25) < 1e-6
+        # Test SB3-style progress_remaining semantics
+        assert schedule(1.0) == 1.0
+        assert schedule(0.5) == 0.5
+        assert schedule(0.0) == 0.0
 
     def test_linear_schedule_monotonic(self):
         """Test that linear schedule is monotonic."""
         schedule = linear_schedule(1.0, 0.0)
 
-        # Should be monotonically decreasing
+        # Should be monotonically decreasing as progress_remaining decreases
         prev_val = float("inf")
-        for progress in np.linspace(0, 1, 11):
-            val = schedule(progress)
+        for step in range(10, -1, -1):
+            progress_remaining = step / 10.0
+            val = schedule(progress_remaining)
             assert val <= prev_val
             prev_val = val
 
@@ -62,8 +67,8 @@ class TestBasicSchedules:
         schedule = linear_schedule(1.0, 0.0)
 
         # Should clamp to bounds
-        assert schedule(-0.5) == 1.0  # Clamped to 0.0 progress
-        assert schedule(1.5) == 0.0  # Clamped to 1.0 progress
+        assert schedule(1.5) == pytest.approx(1.0)  # Clamped to start
+        assert schedule(-0.5) == pytest.approx(0.0)  # Clamped to end
 
     def test_piecewise_schedule(self):
         """Test piecewise schedule."""
@@ -72,13 +77,13 @@ class TestBasicSchedules:
         schedule = piecewise_schedule(endpoints, values)
 
         # Test exact endpoints
-        assert schedule(0.0) == 1.0
-        assert schedule(0.5) == 0.5
-        assert schedule(1.0) == 0.0
+        assert schedule(1.0) == pytest.approx(1.0)
+        assert schedule(0.5) == pytest.approx(0.5)
+        assert schedule(0.0) == pytest.approx(0.0)
 
         # Test interpolation within segments
-        assert abs(schedule(0.25) - 0.75) < 1e-6
-        assert abs(schedule(0.75) - 0.25) < 1e-6
+        assert schedule(0.75) == pytest.approx(0.75)
+        assert schedule(0.25) == pytest.approx(0.25)
 
     def test_piecewise_schedule_constant(self):
         """Test piecewise schedule with constant interpolation."""
@@ -87,12 +92,12 @@ class TestBasicSchedules:
         schedule = piecewise_schedule(endpoints, values, interpolation="constant")
 
         # Should use step function (constant returns left value of interval)
-        assert schedule(0.0) == 1.0
-        assert schedule(0.4) == 1.0  # Still in first segment
-        assert schedule(0.5) == 1.0  # At boundary, returns left value
-        assert schedule(0.6) == 0.5  # In second segment
-        assert schedule(0.9) == 0.5  # Still in second segment
-        assert schedule(1.0) == 0.0  # At final endpoint, returns final value
+        assert schedule(1.0) == pytest.approx(1.0)
+        assert schedule(0.6) == pytest.approx(1.0)  # Still in first segment
+        assert schedule(0.5) == pytest.approx(1.0)  # Boundary uses left value
+        assert schedule(0.4) == pytest.approx(0.5)  # In second segment
+        assert schedule(0.1) == pytest.approx(0.5)  # Still in second segment
+        assert schedule(0.0) == pytest.approx(0.0)  # Final endpoint
 
     def test_piecewise_schedule_validation(self):
         """Test piecewise schedule input validation."""
@@ -140,35 +145,35 @@ class TestScheduleFromString:
         """Test creating constant schedule from string."""
         schedule = schedule_from_string("constant", default_value=0.01)
 
-        assert schedule(0.0) == 0.01
-        assert schedule(0.5) == 0.01
-        assert schedule(1.0) == 0.01
+        assert schedule(1.0) == pytest.approx(0.01)
+        assert schedule(0.5) == pytest.approx(0.01)
+        assert schedule(0.0) == pytest.approx(0.01)
 
     def test_linear_schedule_string(self):
         """Test creating linear schedule from string."""
         schedule = schedule_from_string("linear", default_value=1.0)
 
-        assert schedule(0.0) == 1.0
-        assert schedule(1.0) == 0.0
-        assert abs(schedule(0.5) - 0.5) < 1e-6
+        assert schedule(1.0) == pytest.approx(1.0)
+        assert schedule(0.0) == pytest.approx(0.0)
+        assert schedule(0.5) == pytest.approx(0.5)
 
     def test_get_schedule_fn_strings(self):
         """Test get_schedule_fn with string inputs."""
         # Linear with initial value
         schedule = get_schedule_fn("linear_0.001")
-        assert schedule(0.0) == 0.001
-        assert schedule(1.0) == 0.0
+        assert schedule(1.0) == pytest.approx(0.001)
+        assert schedule(0.0) == pytest.approx(0.0)
 
         # Linear with initial and final values
         schedule = get_schedule_fn("linear_0.001_0.0001")
-        assert schedule(0.0) == 0.001
-        assert abs(schedule(1.0) - 0.0001) < 1e-10
+        assert schedule(1.0) == pytest.approx(0.001)
+        assert schedule(0.0) == pytest.approx(0.0001)
 
         # Piecewise schedule
         schedule = get_schedule_fn("piecewise_0.0:0.1_0.5:0.05_1.0:0.01")
-        assert schedule(0.0) == 0.1
-        assert schedule(0.5) == 0.05
-        assert schedule(1.0) == 0.01
+        assert schedule(1.0) == pytest.approx(0.1)
+        assert schedule(0.5) == pytest.approx(0.05)
+        assert schedule(0.0) == pytest.approx(0.01)
 
     def test_get_schedule_fn_validation(self):
         """Test get_schedule_fn input validation."""
@@ -202,24 +207,24 @@ class TestApplyScheduleToParam:
     def test_callable_param(self):
         """Test with callable parameter."""
 
-        def schedule_fn(progress):
-            return 1.0 - progress
+        def schedule_fn(progress_remaining: float) -> float:
+            return progress_remaining**2
 
         result = apply_schedule_to_param(schedule_fn, 0.3)
-        assert result == 0.7
+        assert result == pytest.approx(0.09)
 
     def test_string_param(self):
         """Test with string parameter."""
         result = apply_schedule_to_param("linear_0.001", 0.5)
-        assert result == 0.0005
+        assert result == pytest.approx(0.0005)
 
     def test_string_param_with_default(self):
         """Test string parameter with default value."""
         result = apply_schedule_to_param("constant", 0.5, default_value=0.01)
-        assert result == 0.01
+        assert result == pytest.approx(0.01)
 
         result = apply_schedule_to_param("linear", 0.5, default_value=1.0)
-        assert result == 0.5
+        assert result == pytest.approx(0.5)
 
 
 class TestProgressSchedule:
@@ -231,12 +236,12 @@ class TestProgressSchedule:
         step_schedule = make_progress_schedule(progress_schedule)
 
         # Test with different total steps
-        assert step_schedule(0, 100) == 1.0
-        assert step_schedule(50, 100) == 0.5
-        assert step_schedule(100, 100) == 0.0
+        assert step_schedule(0, 100) == pytest.approx(1.0)
+        assert step_schedule(50, 100) == pytest.approx(0.5)
+        assert step_schedule(100, 100) == pytest.approx(0.0)
 
         # Test edge case: zero total steps
-        assert step_schedule(10, 0) == 0.0
+        assert step_schedule(10, 0) == pytest.approx(1.0)
 
         # Test edge case: more steps than total
         assert step_schedule(150, 100) == 0.0
@@ -250,9 +255,7 @@ class TestScheduleIntegration:
         # Test linear decay
         schedule = linear_schedule(0.2, 0.1)
 
-        values = []
-        for progress in np.linspace(0, 1, 10):
-            values.append(schedule(progress))
+        values = [schedule(1.0 - i / 9.0) for i in range(10)]
 
         # Should be monotonically decreasing
         for i in range(1, len(values)):
@@ -268,14 +271,15 @@ class TestScheduleIntegration:
 
         # Test over training progress
         prev_lr = float("inf")
-        for progress in np.linspace(0, 1, 20):
-            lr = schedule(progress)
+        for i in range(20):
+            progress_remaining = 1.0 - i / 19.0
+            lr = schedule(progress_remaining)
             assert lr <= prev_lr
             prev_lr = lr
 
         # Check bounds
-        assert schedule(0.0) == 1e-3
-        assert abs(schedule(1.0) - 1e-5) < 1e-10
+        assert schedule(1.0) == pytest.approx(1e-3)
+        assert schedule(0.0) == pytest.approx(1e-5)
 
 
 class TestConvenienceFunctions:
@@ -285,9 +289,9 @@ class TestConvenienceFunctions:
         """Test get_linear_schedule convenience function."""
         schedule = get_linear_schedule(1.0, 0.0)
 
-        assert schedule(0.0) == 1.0
-        assert schedule(1.0) == 0.0
-        assert abs(schedule(0.5) - 0.5) < 1e-6
+        assert schedule(1.0) == 1.0
+        assert schedule(0.0) == 0.0
+        assert schedule(0.5) == pytest.approx(0.5)
 
     def test_get_constant_schedule(self):
         """Test get_constant_schedule convenience function."""
@@ -316,8 +320,8 @@ class TestScheduleNumericStability:
         schedule = piecewise_schedule(endpoints, values)
 
         # Test very close to boundaries
-        assert abs(schedule(1e-10) - 1.0) < 1e-6
-        assert abs(schedule(1.0 - 1e-10) - 0.0) < 1e-6
+        assert abs(schedule(1.0 - 1e-10) - 1.0) < 1e-6
+        assert abs(schedule(1e-10) - 0.0) < 1e-6
 
 
 # Example tests showing SB3 compatibility
@@ -330,8 +334,9 @@ class TestSB3Compatibility:
         clip_schedule = linear_schedule(0.2, 0.0)
 
         # Simulate training progress
-        for progress in np.linspace(0, 1, 10):
-            clip_value = clip_schedule(progress)
+        for i in range(10):
+            progress_remaining = 1.0 - i / 9.0
+            clip_value = clip_schedule(progress_remaining)
             assert 0.0 <= clip_value <= 0.2
 
     def test_entropy_coefficient_schedule(self):
@@ -340,12 +345,13 @@ class TestSB3Compatibility:
         ent_schedule = linear_schedule(0.01, 0.0)
 
         # Should start high and decay to 0
-        assert ent_schedule(0.0) == 0.01
-        assert ent_schedule(1.0) == 0.0
+        assert ent_schedule(1.0) == 0.01
+        assert ent_schedule(0.0) == 0.0
 
         # Should be monotonic
         prev_val = float("inf")
-        for progress in np.linspace(0, 1, 11):
-            val = ent_schedule(progress)
+        for i in range(11):
+            progress_remaining = 1.0 - i / 10.0
+            val = ent_schedule(progress_remaining)
             assert val <= prev_val
             prev_val = val

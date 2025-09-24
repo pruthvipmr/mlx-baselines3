@@ -4,8 +4,8 @@
 - **Install dependencies**: `uv sync`
 - **Test**: `uv run pytest`
 - **Single test**: `uv run pytest tests/test_<module>.py::<test_function>`
-- **Format**: `uv run black mlx_baselines3/ tests/`
-- **Lint**: `uv run flake8 mlx_baselines3/ tests/`
+- **Format**: `uv run ruff format .`
+- **Lint**: `uv run ruff check mlx_baselines3/ tests/`
 - **Type check**: `uv run mypy mlx_baselines3/`
 - **Install dev deps**: `uv sync --extra dev`
 
@@ -39,6 +39,7 @@
 ### Formatting
 - **Type hints are pragmatic**: Prioritize public APIs and tricky internals; don't block progress on typing every corner
 - **Pre-commit always passes locally**: Run linter, mypy, and a fast test subset before proposing a change
+- **Format/Lint with Ruff**: `uv run ruff format .` and `uv run ruff check mlx_baselines3/ tests/` (add `--fix` for autofixes)
 - **NO EMOJIS**: Never use any emojis
 
 ### Testing Policy

@@ -1,26 +1,26 @@
 """
 Deep Q-Networks (DQN) algorithm implementation using MLX.
 
-Based on the original DQN paper: "Human-level control through deep reinforcement learning"
-https://www.nature.com/articles/nature14236
+Based on the original DQN paper, "Human-level control through deep
+reinforcement learning": https://www.nature.com/articles/nature14236
 """
 
-import warnings
 from typing import Any, Dict, List, Optional, Type, Union
 
 import gymnasium as gym
 import mlx.core as mx
-import mlx.nn as nn
 import numpy as np
 
 from mlx_baselines3.common.base_class import OffPolicyAlgorithm
 from mlx_baselines3.common.buffers import ReplayBuffer
-from mlx_baselines3.common.optimizers import AdamAdapter, compute_loss_and_grads, clip_grad_norm
+from mlx_baselines3.common.optimizers import (
+    AdamAdapter,
+    compute_loss_and_grads,
+    clip_grad_norm,
+)
 from mlx_baselines3.common.schedules import linear_schedule
 from mlx_baselines3.common.type_aliases import GymEnv, Schedule
 from mlx_baselines3.common.utils import (
-    get_schedule_fn,
-    obs_as_mlx,
     polyak_update,
     safe_mean,
 )
@@ -45,8 +45,10 @@ class DQN(OffPolicyAlgorithm):
         gamma: Discount factor
         train_freq: Update the model every `train_freq` steps
         gradient_steps: How many gradient steps to do after each rollout
-        target_update_interval: Update the target network every `target_update_interval` steps
-        exploration_fraction: Fraction of entire training period over which exploration rate is annealed
+        target_update_interval: Update the target network every
+            `target_update_interval` steps
+        exploration_fraction: Fraction of training during which the
+            exploration rate is annealed
         exploration_initial_eps: Initial value of random action probability
         exploration_final_eps: Final value of random action probability
         max_grad_norm: Maximum norm for gradient clipping
@@ -115,7 +117,7 @@ class DQN(OffPolicyAlgorithm):
         """Create networks and optimizer."""
         # Create policy networks
         policy_kwargs = getattr(self, "policy_kwargs", {})
-        
+
         if isinstance(self.policy, str):
             if self.policy == "MlpPolicy":
                 policy_class = MlpPolicy
@@ -186,7 +188,9 @@ class DQN(OffPolicyAlgorithm):
             if isinstance(self.action_space, gym.spaces.Discrete):
                 action = self.action_space.sample()
             else:
-                action = np.array([self.action_space.sample() for _ in range(self.n_envs)])
+                action = np.array(
+                    [self.action_space.sample() for _ in range(self.n_envs)]
+                )
         else:
             # Greedy action from Q-network
             action, _ = self.q_net.predict(observation, deterministic=True)
@@ -210,7 +214,7 @@ class DQN(OffPolicyAlgorithm):
     def learn(
         self,
         total_timesteps: int,
-        callback = None,
+        callback=None,
         log_interval: int = 4,
         tb_log_name: str = "DQN",
         reset_num_timesteps: bool = True,
@@ -237,11 +241,12 @@ class DQN(OffPolicyAlgorithm):
             self.num_timesteps = 0
             self._episode_num = 0
         self._total_timesteps = total_timesteps
-        
+
         # Convert callback to proper format
         from mlx_baselines3.common.callbacks import convert_callback
+
         callback = convert_callback(callback)
-        
+
         # Initial reset
         if not hasattr(self, "_last_obs") or self._last_obs is None:
             reset_out = self.env.reset()
@@ -250,23 +255,23 @@ class DQN(OffPolicyAlgorithm):
             else:
                 obs0 = reset_out
             # Ensure batch dim for non-Vec envs
-            if not hasattr(self.env, 'num_envs') or self.n_envs == 1:
+            if not hasattr(self.env, "num_envs") or self.n_envs == 1:
                 self._last_obs = np.expand_dims(obs0, 0)
             else:
                 self._last_obs = obs0
         if not hasattr(self, "_last_episode_starts"):
             self._last_episode_starts = np.ones((self.n_envs,), dtype=bool)
-        
+
         callback.on_training_start(locals(), globals())
-        
+
         timesteps_since_last_train = 0
-        
+
         while self.num_timesteps < total_timesteps:
             # Sample action(s) with epsilon-greedy exploration
             actions = self._sample_action(self.learning_starts, n_envs=self.n_envs)
-            
+
             # Step the environment (handle non-Vec single env API)
-            if self.n_envs == 1 and not hasattr(self.env, 'num_envs'):
+            if self.n_envs == 1 and not hasattr(self.env, "num_envs"):
                 step_action = actions if np.asarray(actions).ndim == 0 else actions[0]
                 obs_, reward, terminated, truncated, info = self.env.step(step_action)
                 done = np.array([terminated or truncated])
@@ -276,11 +281,17 @@ class DQN(OffPolicyAlgorithm):
             else:
                 new_obs, rewards, done, infos = self.env.step(actions)
                 done = np.array(done)
-            
+
             # Ensure batch dimensions for replay buffer
-            if not isinstance(new_obs, dict) and new_obs.ndim == len(self.observation_space.shape):
+            if not isinstance(new_obs, dict) and new_obs.ndim == len(
+                self.observation_space.shape
+            ):
                 new_obs = np.expand_dims(new_obs, 0)
-            if not isinstance(self._last_obs, dict) and self._last_obs is not None and self._last_obs.ndim == len(self.observation_space.shape):
+            if (
+                not isinstance(self._last_obs, dict)
+                and self._last_obs is not None
+                and self._last_obs.ndim == len(self.observation_space.shape)
+            ):
                 last_obs_batched = np.expand_dims(self._last_obs, 0)
             else:
                 last_obs_batched = self._last_obs
@@ -290,29 +301,34 @@ class DQN(OffPolicyAlgorithm):
                 actions_batched = np.expand_dims(actions, 0)
             else:
                 actions_batched = actions
-            
+
             # Store transition in replay buffer
-            self.replay_buffer.add(last_obs_batched, new_obs, actions_batched, rewards, done, infos)
-            
+            self.replay_buffer.add(
+                last_obs_batched, new_obs, actions_batched, rewards, done, infos
+            )
+
             self._last_obs = new_obs
             self._last_episode_starts = done
-            
+
             # Increment timesteps
             self.num_timesteps += self.n_envs
             timesteps_since_last_train += self.n_envs
-            
+
             # Update learning progress
             self._update_current_progress_remaining(self.num_timesteps, total_timesteps)
-            
+
             # Train according to frequency
-            if self.num_timesteps >= self.learning_starts and timesteps_since_last_train >= int(self.train_freq):
+            if (
+                self.num_timesteps >= self.learning_starts
+                and timesteps_since_last_train >= int(self.train_freq)
+            ):
                 self.train(self.gradient_steps, batch_size=self.batch_size)
                 timesteps_since_last_train = 0
-            
+
             # Callback step
             if callback is not None and not callback.on_step():
                 break
-        
+
         callback.on_training_end()
         return self
 
@@ -326,7 +342,7 @@ class DQN(OffPolicyAlgorithm):
         """
         # Track losses for logging
         q_losses = []
-        
+
         # Get current parameters
         params = self.q_net.state_dict()
 
@@ -335,30 +351,34 @@ class DQN(OffPolicyAlgorithm):
             replay_data = self.replay_buffer.sample(batch_size, env=self.env)
 
             # Pre-compute target Q-values (don't need gradients for these)
-            next_q_values = self.q_net_target.predict_values(replay_data["next_observations"])
+            next_q_values = self.q_net_target.predict_values(
+                replay_data["next_observations"]
+            )
             next_q_values = mx.max(next_q_values, axis=1)
-            
+
             # Compute target Q-values using Bellman equation
             target_q_values = (
-                replay_data["rewards"] 
-                + (1 - replay_data["dones"].astype(mx.float32)) * self.gamma * next_q_values
+                replay_data["rewards"]
+                + (1 - replay_data["dones"].astype(mx.float32))
+                * self.gamma
+                * next_q_values
             )
 
             # Define pure loss function for gradient computation
             def loss_fn(p):
                 # Load params into policy temporarily for computation
                 self.q_net.load_state_dict(p, strict=False)
-                
+
                 # Get Q-values for current observations
                 q_values = self.q_net.predict_values(replay_data["observations"])
-                
+
                 # Select Q-values for actions taken
                 current_q_values = mx.take_along_axis(
                     q_values,
                     mx.expand_dims(replay_data["actions"].astype(mx.int32), axis=-1),
-                    axis=-1
+                    axis=-1,
                 ).squeeze(-1)
-                
+
                 # Huber loss (smooth L1 loss)
                 def huber_loss(pred, target, delta=1.0):
                     residual = mx.abs(pred - target)
@@ -366,7 +386,7 @@ class DQN(OffPolicyAlgorithm):
                     squared_loss = 0.5 * residual * residual / delta
                     linear_loss = residual - 0.5 * delta
                     return mx.where(condition, squared_loss, linear_loss)
-                
+
                 # Compute and return loss
                 loss = mx.mean(huber_loss(current_q_values, target_q_values))
                 return loss
@@ -382,7 +402,7 @@ class DQN(OffPolicyAlgorithm):
             params, self.optimizer_state = self.optimizer.update(
                 params, grads, self.optimizer_state
             )
-            
+
             # Ensure policy reflects latest params
             self.q_net.load_state_dict(params, strict=False)
             mx.eval(list(params.values()))
@@ -393,23 +413,16 @@ class DQN(OffPolicyAlgorithm):
             # Update target network
             if self.num_timesteps % self.target_update_interval == 0:
                 polyak_update(
-                    self.q_net.state_dict(),
-                    self.q_net_target.state_dict(),
-                    self.tau
+                    self.q_net.state_dict(), self.q_net_target.state_dict(), self.tau
                 )
 
         # Log training info
-        if len(q_losses) > 0 and hasattr(self, 'logger') and self.logger is not None:
+        if len(q_losses) > 0 and hasattr(self, "logger") and self.logger is not None:
             self.logger.record("train/q_loss", safe_mean(q_losses))
             self.logger.record("train/exploration_rate", self._get_exploration_rate())
 
-
-
     def _sample_action(
-        self,
-        learning_starts: int,
-        action_noise = None,
-        n_envs: int = 1
+        self, learning_starts: int, action_noise=None, n_envs: int = 1
     ) -> np.ndarray:
         """
         Sample actions according to the current exploration policy.
@@ -423,7 +436,10 @@ class DQN(OffPolicyAlgorithm):
             Actions to take
         """
         # Use epsilon-greedy exploration
-        if self.num_timesteps < learning_starts or np.random.rand() < self._get_exploration_rate():
+        if (
+            self.num_timesteps < learning_starts
+            or np.random.rand() < self._get_exploration_rate()
+        ):
             # Random action
             if isinstance(self.action_space, gym.spaces.Discrete):
                 actions = np.array([self.action_space.sample() for _ in range(n_envs)])
@@ -441,9 +457,11 @@ class DQN(OffPolicyAlgorithm):
         if self.q_net is not None:
             params["q_net_parameters"] = dict(self.q_net.named_parameters())
         if self.q_net_target is not None:
-            params["q_net_target_parameters"] = dict(self.q_net_target.named_parameters())
+            params["q_net_target_parameters"] = dict(
+                self.q_net_target.named_parameters()
+            )
         return params
-        
+
     def _set_parameters(self, params: Dict[str, Any], exact_match: bool = True) -> None:
         """Set algorithm parameters."""
         if "q_net_parameters" in params and self.q_net is not None:
@@ -451,7 +469,9 @@ class DQN(OffPolicyAlgorithm):
             self.q_net.load_state_dict(params["q_net_parameters"], strict=exact_match)
         if "q_net_target_parameters" in params and self.q_net_target is not None:
             # Load target Q-network parameters
-            self.q_net_target.load_state_dict(params["q_net_target_parameters"], strict=exact_match)
+            self.q_net_target.load_state_dict(
+                params["q_net_target_parameters"], strict=exact_match
+            )
 
     def _excluded_save_params(self) -> List[str]:
         """
@@ -485,37 +505,39 @@ class DQN(OffPolicyAlgorithm):
     def _get_save_data(self) -> Dict[str, Any]:
         """Get data to save."""
         data = super()._get_save_data()
-        
+
         # Save DQN-specific parameters
-        data.update({
-            "buffer_size": self.buffer_size,
-            "learning_starts": self.learning_starts,
-            "batch_size": self.batch_size,
-            "tau": self.tau,
-            "gamma": self.gamma,
-            "train_freq": self.train_freq,
-            "gradient_steps": self.gradient_steps,
-            "target_update_interval": self.target_update_interval,
-            "exploration_fraction": self.exploration_fraction,
-            "exploration_initial_eps": self.exploration_initial_eps,
-            "exploration_final_eps": self.exploration_final_eps,
-            "max_grad_norm": self.max_grad_norm,
-            "optimize_memory_usage": self.optimize_memory_usage,
-        })
-        
+        data.update(
+            {
+                "buffer_size": self.buffer_size,
+                "learning_starts": self.learning_starts,
+                "batch_size": self.batch_size,
+                "tau": self.tau,
+                "gamma": self.gamma,
+                "train_freq": self.train_freq,
+                "gradient_steps": self.gradient_steps,
+                "target_update_interval": self.target_update_interval,
+                "exploration_fraction": self.exploration_fraction,
+                "exploration_initial_eps": self.exploration_initial_eps,
+                "exploration_final_eps": self.exploration_final_eps,
+                "max_grad_norm": self.max_grad_norm,
+                "optimize_memory_usage": self.optimize_memory_usage,
+            }
+        )
+
         # Save exploration schedule progress (current epsilon value)
         data["current_exploration_rate"] = self._get_exploration_rate()
-        
+
         # Save optimizer state if it exists
         if hasattr(self, "optimizer_state"):
             data["q_net_optimizer_state"] = self.optimizer_state
-        
+
         return data
 
     def _load_save_data(self, data: Dict[str, Any]) -> None:
         """Load data from save."""
         super()._load_save_data(data)
-        
+
         # Load DQN-specific parameters
         self.buffer_size = data.get("buffer_size", self.buffer_size)
         self.learning_starts = data.get("learning_starts", self.learning_starts)
@@ -524,13 +546,23 @@ class DQN(OffPolicyAlgorithm):
         self.gamma = data.get("gamma", self.gamma)
         self.train_freq = data.get("train_freq", self.train_freq)
         self.gradient_steps = data.get("gradient_steps", self.gradient_steps)
-        self.target_update_interval = data.get("target_update_interval", self.target_update_interval)
-        self.exploration_fraction = data.get("exploration_fraction", self.exploration_fraction)
-        self.exploration_initial_eps = data.get("exploration_initial_eps", self.exploration_initial_eps)
-        self.exploration_final_eps = data.get("exploration_final_eps", self.exploration_final_eps)
+        self.target_update_interval = data.get(
+            "target_update_interval", self.target_update_interval
+        )
+        self.exploration_fraction = data.get(
+            "exploration_fraction", self.exploration_fraction
+        )
+        self.exploration_initial_eps = data.get(
+            "exploration_initial_eps", self.exploration_initial_eps
+        )
+        self.exploration_final_eps = data.get(
+            "exploration_final_eps", self.exploration_final_eps
+        )
         self.max_grad_norm = data.get("max_grad_norm", self.max_grad_norm)
-        self.optimize_memory_usage = data.get("optimize_memory_usage", self.optimize_memory_usage)
-        
+        self.optimize_memory_usage = data.get(
+            "optimize_memory_usage", self.optimize_memory_usage
+        )
+
         # Load optimizer state if it exists
         if "q_net_optimizer_state" in data:
             self.optimizer_state = data["q_net_optimizer_state"]

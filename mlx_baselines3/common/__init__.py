@@ -1,12 +1,20 @@
 """Common utilities and base classes for MLX Baselines3."""
 
-from mlx_baselines3.common.base_class import BaseAlgorithm, OnPolicyAlgorithm, OffPolicyAlgorithm
+from mlx_baselines3.common.base_class import (
+    BaseAlgorithm,
+    OnPolicyAlgorithm,
+    OffPolicyAlgorithm,
+)
 from mlx_baselines3.common.buffers import RolloutBuffer, ReplayBuffer
 from mlx_baselines3.common.preprocessing import preprocess_obs, is_image_space
-from mlx_baselines3.common.type_aliases import *
+from mlx_baselines3.common import type_aliases
 from mlx_baselines3.common.callbacks import (
-    BaseCallback, CallbackList, CheckpointCallback, EvalCallback,
-    StopTrainingOnRewardThreshold, ProgressBarCallback
+    BaseCallback,
+    CallbackList,
+    CheckpointCallback,
+    EvalCallback,
+    StopTrainingOnRewardThreshold,
+    ProgressBarCallback,
 )
 from mlx_baselines3.common.logger import Logger, configure_logger
 from mlx_baselines3.common import utils
@@ -19,12 +27,13 @@ from mlx_baselines3.common import logger
 
 __all__ = [
     "BaseAlgorithm",
-    "OnPolicyAlgorithm", 
+    "OnPolicyAlgorithm",
     "OffPolicyAlgorithm",
     "RolloutBuffer",
     "ReplayBuffer",
     "preprocess_obs",
     "is_image_space",
+    "type_aliases",
     "BaseCallback",
     "CallbackList",
     "CheckpointCallback",

@@ -20,22 +20,27 @@ def show_versions():
     """Show versions of MLX Baselines3 and its dependencies."""
     import sys
     import platform
-    
+
     try:
-        import mlx.core
-        # MLX doesn't have __version__ attribute, so we check if it's importable
+        import importlib.util
+
+        if importlib.util.find_spec("mlx.core") is None:
+            raise ImportError
+        # MLX doesn't expose a __version__ attribute; just report availability
         mlx_version = "available (version unknown)"
     except ImportError:
         mlx_version = "not available"
-    
+
     try:
         import gymnasium
+
         gym_version = gymnasium.__version__
     except (ImportError, AttributeError):
         gym_version = "not available"
-    
+
     try:
         import numpy
+
         numpy_version = numpy.__version__
     except (ImportError, AttributeError):
         numpy_version = "not available"
@@ -50,11 +55,19 @@ def show_versions():
 
 __all__ = [
     # Algorithms
-    "PPO", "A2C", "DQN", "SAC", "TD3",
+    "PPO",
+    "A2C",
+    "DQN",
+    "SAC",
+    "TD3",
     # Policy aliases
-    "MlpPolicy", "CnnPolicy", "MultiInputPolicy",
+    "MlpPolicy",
+    "CnnPolicy",
+    "MultiInputPolicy",
     # VecEnv utilities
-    "VecNormalize", "DummyVecEnv", "make_vec_env",
+    "VecNormalize",
+    "DummyVecEnv",
+    "make_vec_env",
     # Utilities
     "show_versions",
 ]

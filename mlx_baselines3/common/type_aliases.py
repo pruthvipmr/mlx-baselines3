@@ -62,7 +62,9 @@ OptimizerState = Dict[str, Any]
 
 # Policy prediction returns
 PolicyPredict = Tuple[MlxArray, Optional[MlxArray]]  # (actions, states)
-PolicyPredictWithLogProb = Tuple[MlxArray, MlxArray, Optional[MlxArray]]  # (actions, log_probs, states)
+PolicyPredictWithLogProb = Tuple[
+    MlxArray, MlxArray, Optional[MlxArray]
+]  # (actions, log_probs, states)
 
 # Value function outputs
 ValuePredict = MlxArray
@@ -155,7 +157,9 @@ OptionalStr = Optional[str]
 # ============================================================================
 
 # Actor-Critic policy components
-ActorOutput = Union[MlxArray, Tuple[MlxArray, MlxArray]]  # actions or (actions, log_probs)
+ActorOutput = Union[
+    MlxArray, Tuple[MlxArray, MlxArray]
+]  # actions or (actions, log_probs)
 CriticOutput = MlxArray  # value estimates
 
 # Q-function outputs (for SAC, TD3, DQN)

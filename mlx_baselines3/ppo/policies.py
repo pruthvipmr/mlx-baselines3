@@ -18,35 +18,37 @@ from mlx_baselines3.common.type_aliases import Schedule
 class PPOPolicy(ActorCriticPolicy):
     """
     Policy class for PPO algorithm using MLX.
-    
-    This class extends the base ActorCriticPolicy with PPO-specific configurations
-    and optimizations.
-    
+
+    This class extends the base ActorCriticPolicy with PPO-specific
+    configurations and optimizations.
+
     Args:
         observation_space: Observation space
-        action_space: Action space  
+        action_space: Action space
         lr_schedule: Learning rate schedule
         net_arch: The specification of the policy and value networks
         activation_fn: Activation function
         ortho_init: Whether to use orthogonal initialization
         use_sde: Whether to use State Dependent Exploration
         log_std_init: Initial value for the log standard deviation
-        full_std: Whether to use (n_features x n_actions) parameters for the std 
-                 instead of only (n_features,) when using gSDE
-        use_expln: Use ``expln()`` function instead of ``exp()`` to ensure
-                  positive standard deviations (cf paper). It allows to keep variance
-                  above zero and prevent it from growing too fast. In practice, ``exp()`` is usually enough.
-        squash_output: Whether to squash the output using a tanh function,
-                      this allows to ensure boundaries when using continuous actions.
+        full_std: Whether to use (n_features x n_actions) parameters for the
+            std instead of only (n_features,) when using gSDE
+        use_expln: Use ``expln()`` instead of ``exp()`` to ensure positive
+            standard deviations (cf paper). It keeps variance above zero and
+            prevents it from growing too fast. In practice, ``exp()`` is usually
+            enough.
+        squash_output: Whether to squash the output using a tanh function to
+            ensure boundaries when using continuous actions
         features_extractor_class: Features extractor to use
         features_extractor_kwargs: Keyword arguments for features extractor
-        share_features_extractor: Whether to share the features extractor between actor and critic
-        normalize_images: Whether to normalize images or not,
-                         dividing by 255.0 (True by default)
+        share_features_extractor: Whether to share the features extractor
+            between actor and critic
+        normalize_images: Whether to normalize images or not, dividing by
+            255.0 (True by default)
         optimizer_class: The optimizer to use
         optimizer_kwargs: Additional keyword arguments for the optimizer
     """
-    
+
     def __init__(
         self,
         observation_space: gym.Space,
@@ -70,15 +72,16 @@ class PPOPolicy(ActorCriticPolicy):
         # Set default optimizer if not provided
         if optimizer_class is None:
             import mlx.optimizers as optim
+
             optimizer_class = optim.Adam
-            
+
         if optimizer_kwargs is None:
             optimizer_kwargs = {}
-        
+
         # Set default network architecture if not provided
         if net_arch is None:
             net_arch = dict(pi=[64, 64], vf=[64, 64])
-            
+
         super().__init__(
             observation_space=observation_space,
             action_space=action_space,
@@ -107,15 +110,15 @@ MlpPolicy = PPOPolicy
 class CnnPolicy(PPOPolicy):
     """
     CNN policy class for PPO when using image observations.
-    
+
     This policy uses a convolutional neural network for feature extraction
     from image observations.
     """
-    
+
     def __init__(self, *args, **kwargs):
         # For now, use MlpExtractor as fallback until NatureCNN is implemented
         from mlx_baselines3.common.torch_layers import MlpExtractor
-        
+
         super().__init__(
             *args,
             **kwargs,
@@ -127,15 +130,15 @@ class CnnPolicy(PPOPolicy):
 class MultiInputPolicy(PPOPolicy):
     """
     MultiInput policy class for PPO when using dictionary observations.
-    
+
     This policy handles multiple input types (e.g., images + vectors)
     through a multi-input features extractor.
     """
-    
+
     def __init__(self, *args, **kwargs):
         # For now, use MlpExtractor as fallback until CombinedExtractor is implemented
         from mlx_baselines3.common.torch_layers import MlpExtractor
-        
+
         super().__init__(
             *args,
             **kwargs,
@@ -146,7 +149,7 @@ class MultiInputPolicy(PPOPolicy):
 # Register policy classes for string-based instantiation
 PPO_POLICY_CLASSES = {
     "MlpPolicy": MlpPolicy,
-    "CnnPolicy": CnnPolicy, 
+    "CnnPolicy": CnnPolicy,
     "MultiInputPolicy": MultiInputPolicy,
 }
 
@@ -154,17 +157,20 @@ PPO_POLICY_CLASSES = {
 def get_ppo_policy_class(policy_name: str) -> Type[PPOPolicy]:
     """
     Get PPO policy class by name.
-    
+
     Args:
         policy_name: Name of the policy class
-        
+
     Returns:
         Policy class
-        
+
     Raises:
         ValueError: If policy name is not recognized
     """
     if policy_name in PPO_POLICY_CLASSES:
         return PPO_POLICY_CLASSES[policy_name]
     else:
-        raise ValueError(f"Unknown policy: {policy_name}. Available policies: {list(PPO_POLICY_CLASSES.keys())}")
+        available = list(PPO_POLICY_CLASSES.keys())
+        raise ValueError(
+            f"Unknown policy: {policy_name}. Available policies: {available}"
+        )

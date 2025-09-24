@@ -1,26 +1,26 @@
 """
-Twin Delayed Deep Deterministic Policy Gradient (TD3) algorithm implementation using MLX.
+Twin Delayed Deep Deterministic Policy Gradient (TD3) algorithm implementation
+using MLX.
 
-Based on the original TD3 paper:
-"Addressing Function Approximation Error in Actor-Critic Methods"
-https://arxiv.org/abs/1802.09477
+Based on the original TD3 paper, "Addressing Function Approximation Error in
+Actor-Critic Methods": https://arxiv.org/abs/1802.09477
 """
 
-import warnings
 from typing import Any, Dict, List, Optional, Tuple, Type, Union
 
 import gymnasium as gym
 import mlx.core as mx
-import mlx.nn as nn
 import numpy as np
 
 from mlx_baselines3.common.base_class import OffPolicyAlgorithm
 from mlx_baselines3.common.buffers import ReplayBuffer
-from mlx_baselines3.common.optimizers import AdamAdapter, compute_loss_and_grads, clip_grad_norm
-from mlx_baselines3.common.schedules import get_schedule_fn
+from mlx_baselines3.common.optimizers import (
+    AdamAdapter,
+    compute_loss_and_grads,
+    clip_grad_norm,
+)
 from mlx_baselines3.common.type_aliases import GymEnv, Schedule
 from mlx_baselines3.common.utils import (
-    get_schedule_fn,
     obs_as_mlx,
     polyak_update,
     safe_mean,
@@ -31,14 +31,14 @@ from mlx_baselines3.td3.policies import TD3Policy
 class TD3(OffPolicyAlgorithm):
     """
     Twin Delayed Deep Deterministic Policy Gradient (TD3) algorithm.
-    
+
     Paper: https://arxiv.org/abs/1802.09477
-    
+
     TD3 is an off-policy actor-critic deep RL algorithm that extends DDPG with:
     - Twin critics to reduce overestimation bias
     - Delayed policy updates (update actor less frequently than critics)
     - Target policy smoothing (add noise to target actions)
-    
+
     Args:
         policy: The policy model to use (MlpPolicy, CnnPolicy, ...)
         env: The environment to learn from
@@ -65,7 +65,7 @@ class TD3(OffPolicyAlgorithm):
         device: Device to use for computation
         _init_setup_model: Whether to build the network immediately
     """
-    
+
     policy_aliases: Dict[str, str] = {
         "MlpPolicy": "MlpPolicy",  # Will be resolved in _setup_model
     }
@@ -114,7 +114,7 @@ class TD3(OffPolicyAlgorithm):
         self.stats_window_size = stats_window_size
         self.tensorboard_log = tensorboard_log
         self.replay_buffer = None
-        
+
         super().__init__(
             policy=policy,
             env=env,
@@ -126,10 +126,10 @@ class TD3(OffPolicyAlgorithm):
             replay_buffer_class=replay_buffer_class,
             replay_buffer_kwargs=replay_buffer_kwargs,
         )
-        
+
         # Training/update counters
         self._n_updates = 0
-        
+
         # TD3 is only for continuous action spaces
         if not isinstance(self.action_space, gym.spaces.Box):
             raise ValueError("TD3 only supports continuous action spaces (Box)")
@@ -140,11 +140,12 @@ class TD3(OffPolicyAlgorithm):
         """Set up the model and optimizers."""
         # Store original policy spec before it gets modified
         original_policy = self.policy
-        
+
         # Create policy networks
         if isinstance(original_policy, str):
             if original_policy == "MlpPolicy":
                 from mlx_baselines3.td3.policies import MlpPolicy as TD3MlpPolicy
+
                 policy_class = TD3MlpPolicy
             else:
                 raise ValueError(f"Unknown policy: {original_policy}")
@@ -159,20 +160,26 @@ class TD3(OffPolicyAlgorithm):
             **self.policy_kwargs,
         )
         self.policy = policy_instance
-        
+
         self._create_aliases()
-        
+
         # Set up replay buffer
         if self.replay_buffer_class is None:
             self.replay_buffer_class = ReplayBuffer
-            
+
         if self.replay_buffer is None:
             # Default kwargs for replay buffer
-            replay_buffer_kwargs = {} if self.replay_buffer_kwargs is None else self.replay_buffer_kwargs.copy()
-            replay_buffer_kwargs.update({
-                "optimize_memory_usage": self.optimize_memory_usage,
-            })
-            
+            replay_buffer_kwargs = (
+                {}
+                if self.replay_buffer_kwargs is None
+                else self.replay_buffer_kwargs.copy()
+            )
+            replay_buffer_kwargs.update(
+                {
+                    "optimize_memory_usage": self.optimize_memory_usage,
+                }
+            )
+
             self.replay_buffer = self.replay_buffer_class(
                 self.buffer_size,
                 self.observation_space,
@@ -199,11 +206,14 @@ class TD3(OffPolicyAlgorithm):
         for name, param in self.policy.parameters().items():
             if ("actor_net" in name or "actor_output" in name) and "target" not in name:
                 actor_params[name] = param
-        
+
         # Get critic parameters (q_net_0 and q_net_1, but not targets)
         critic_params = {}
         for name, param in self.policy.parameters().items():
-            if any(f"q_net_{i}" in name for i in range(self.policy.n_critics)) and "target" not in name:
+            if (
+                any(f"q_net_{i}" in name for i in range(self.policy.n_critics))
+                and "target" not in name
+            ):
                 critic_params[name] = param
 
         # Initialize optimizer states
@@ -220,14 +230,14 @@ class TD3(OffPolicyAlgorithm):
     def train(self, gradient_steps: int, batch_size: int = 64) -> None:
         """
         Update policy using gradient steps on batches from the replay buffer.
-        
+
         Args:
             gradient_steps: Number of gradient steps to take
             batch_size: Size of training batches
         """
         # Switch to train mode
         self.policy.set_training_mode(True)
-        
+
         # Update learning rate according to schedule
         self._update_learning_rate([self.actor_optimizer, self.critic_optimizer])
 
@@ -237,7 +247,7 @@ class TD3(OffPolicyAlgorithm):
         for gradient_step in range(gradient_steps):
             # Sample a batch from the replay buffer
             replay_data = self.replay_buffer.sample(batch_size)
-            
+
             # Convert to MLX arrays
             observations = obs_as_mlx(replay_data["observations"])
             actions = mx.array(replay_data["actions"])
@@ -265,7 +275,9 @@ class TD3(OffPolicyAlgorithm):
 
         # Store training stats (optional logger)
         if hasattr(self, "logger") and self.logger is not None:
-            self.logger.record("train/n_updates", self._n_updates, exclude="tensorboard")
+            self.logger.record(
+                "train/n_updates", self._n_updates, exclude="tensorboard"
+            )
             if len(actor_losses) > 0:
                 self.logger.record("train/actor_loss", safe_mean(actor_losses))
             self.logger.record("train/critic_loss", safe_mean(critic_losses))
@@ -279,29 +291,33 @@ class TD3(OffPolicyAlgorithm):
         dones: mx.array,
     ) -> mx.array:
         """Update critic networks."""
-        
+
         def critic_loss_fn(critic_params: Dict[str, mx.array]) -> mx.array:
             """Compute critic loss."""
             # Update policy parameters for forward pass
             old_params = self.policy.parameters()
             temp_params = {**old_params, **critic_params}
             self.policy.load_state_dict(temp_params, strict=False)
-            
+
             # Compute current Q-values
             features = self.policy.extract_features(observations)
             current_q_values = self.policy.critic_forward(features, actions)
-            
+
             # Compute target Q-values using target networks
             next_features = self.policy.extract_features(next_observations)
             next_actions = self.policy.actor_target_forward(next_features)
-            
+
             # Add target policy smoothing noise
-            noise = mx.random.normal(shape=next_actions.shape) * self.target_policy_noise
+            noise = (
+                mx.random.normal(shape=next_actions.shape) * self.target_policy_noise
+            )
             noise = mx.clip(noise, -self.target_noise_clip, self.target_noise_clip)
-            
-            # Apply noise and ensure actions stay in bounds [-1, 1] (before action space scaling)
-            # Since actor_target_forward already handles action space scaling, we need to work in normalized space
-            if hasattr(self.action_space, 'low') and hasattr(self.action_space, 'high'):
+
+            # Apply noise and ensure actions stay in bounds [-1, 1] (before
+            # action space scaling)
+            # Since actor_target_forward handles action scaling, work in the
+            # normalized space
+            if hasattr(self.action_space, "low") and hasattr(self.action_space, "high"):
                 low = mx.array(self.action_space.low)
                 high = mx.array(self.action_space.high)
                 # Convert to normalized space [-1, 1]
@@ -311,78 +327,88 @@ class TD3(OffPolicyAlgorithm):
                 # Clip in normalized space
                 next_actions_normalized = mx.clip(next_actions_normalized, -1.0, 1.0)
                 # Convert back to action space
-                noisy_next_actions = low + (next_actions_normalized + 1.0) * 0.5 * (high - low)
+                noisy_next_actions = low + (next_actions_normalized + 1.0) * 0.5 * (
+                    high - low
+                )
             else:
                 noisy_next_actions = mx.clip(next_actions + noise, -1.0, 1.0)
-            
-            target_q_values = self.policy.critic_target_forward(next_features, noisy_next_actions)
-            
+
+            target_q_values = self.policy.critic_target_forward(
+                next_features, noisy_next_actions
+            )
+
             # Take minimum of target Q-values (clipped double Q-learning)
             target_q = mx.minimum(target_q_values[0], target_q_values[1])
-            
+
             # Compute target values with Bellman backup
-            target_q = rewards.reshape(-1, 1) + (1 - dones.reshape(-1, 1)) * self.gamma * target_q
-            
+            target_q = (
+                rewards.reshape(-1, 1)
+                + (1 - dones.reshape(-1, 1)) * self.gamma * target_q
+            )
+
             # Compute losses for both critics
             critic_losses = []
             for current_q in current_q_values:
                 critic_loss = mx.mean((current_q - target_q) ** 2)
                 critic_losses.append(critic_loss)
-            
+
             total_critic_loss = sum(critic_losses)
-            
+
             # Restore original parameters
             self.policy.load_state_dict(old_params, strict=False)
-            
+
             return total_critic_loss
 
         # Get critic parameters
         critic_params = {}
         for name, param in self.policy.parameters().items():
-            if any(f"q_net_{i}" in name for i in range(self.policy.n_critics)) and "target" not in name:
+            if (
+                any(f"q_net_{i}" in name for i in range(self.policy.n_critics))
+                and "target" not in name
+            ):
                 critic_params[name] = param
 
         # Compute loss and gradients
         loss, gradients = compute_loss_and_grads(critic_loss_fn, critic_params)
-        
+
         # Clip gradients
         gradients = clip_grad_norm(gradients, max_norm=10.0)
-        
+
         # Update parameters
         updated_params, self.critic_optimizer_state = self.critic_optimizer.update(
             critic_params, gradients, self.critic_optimizer_state
         )
-        
+
         # Update policy with new parameters
         all_params = self.policy.parameters()
         all_params.update(updated_params)
         self.policy.load_state_dict(all_params, strict=False)
-        
+
         return loss
 
     def _update_actor(self, observations: mx.array) -> mx.array:
         """Update actor network."""
-        
+
         def actor_loss_fn(actor_params: Dict[str, mx.array]) -> mx.array:
             """Compute actor loss."""
             # Update policy parameters for forward pass
             old_params = self.policy.parameters()
             temp_params = {**old_params, **actor_params}
             self.policy.load_state_dict(temp_params, strict=False)
-            
+
             # Forward pass through actor
             features = self.policy.extract_features(observations)
             actions = self.policy.actor_forward(features)
-            
+
             # Compute Q-values for actor's actions using first critic only
             q_values = self.policy.critic_forward(features, actions)
-            
+
             # Actor loss: maximize Q(s, a) -> minimize -Q(s, a)
             actor_loss = -mx.mean(q_values[0])
-            
+
             # Restore original parameters
             self.policy.load_state_dict(old_params, strict=False)
-            
+
             return actor_loss
 
         # Get actor parameters (both actor_net and actor_output, but not targets)
@@ -393,20 +419,20 @@ class TD3(OffPolicyAlgorithm):
 
         # Compute loss and gradients
         loss, gradients = compute_loss_and_grads(actor_loss_fn, actor_params)
-        
+
         # Clip gradients
         gradients = clip_grad_norm(gradients, max_norm=10.0)
-        
+
         # Update parameters
         updated_params, self.actor_optimizer_state = self.actor_optimizer.update(
             actor_params, gradients, self.actor_optimizer_state
         )
-        
+
         # Update policy with new parameters
         all_params = self.policy.parameters()
         all_params.update(updated_params)
         self.policy.load_state_dict(all_params, strict=False)
-        
+
         return loss
 
     def _update_target_networks(self) -> None:
@@ -414,7 +440,7 @@ class TD3(OffPolicyAlgorithm):
         # Update target actor - create mapping from main to target parameter names
         main_actor_params = {}
         target_actor_params = {}
-        
+
         for name, param in self.policy.parameters().items():
             if ("actor_net" in name or "actor_output" in name) and "target" not in name:
                 main_actor_params[name] = param
@@ -425,35 +451,46 @@ class TD3(OffPolicyAlgorithm):
                     target_name = name.replace("actor_output", "actor_target_output")
                 else:
                     target_name = name
-                    
+
                 # Find the corresponding target parameter
                 all_params = self.policy.parameters()
                 if target_name in all_params:
-                    target_actor_params[name] = all_params[target_name]  # Use main param name as key
+                    target_actor_params[name] = all_params[
+                        target_name
+                    ]  # Use main param name as key
 
-        updated_target_actor_params = polyak_update(main_actor_params, target_actor_params, self.tau)
-        
+        updated_target_actor_params = polyak_update(
+            main_actor_params, target_actor_params, self.tau
+        )
+
         # Update target critics - create mapping from main to target parameter names
         main_critic_params = {}
         target_critic_params = {}
-        
+
         for name, param in self.policy.parameters().items():
-            if any(f"q_net_{i}" in name for i in range(self.policy.n_critics)) and "target" not in name:
+            if (
+                any(f"q_net_{i}" in name for i in range(self.policy.n_critics))
+                and "target" not in name
+            ):
                 main_critic_params[name] = param
                 # Create target parameter name
                 target_name = name.replace("q_net_", "q_net_target_")
-                
+
                 # Find the corresponding target parameter
                 all_params = self.policy.parameters()
                 if target_name in all_params:
-                    target_critic_params[name] = all_params[target_name]  # Use main param name as key
+                    target_critic_params[name] = all_params[
+                        target_name
+                    ]  # Use main param name as key
 
-        updated_target_critic_params = polyak_update(main_critic_params, target_critic_params, self.tau)
-        
+        updated_target_critic_params = polyak_update(
+            main_critic_params, target_critic_params, self.tau
+        )
+
         # Apply updated parameters back to the policy
         # We need to map the parameter names back to their target names
         all_params = self.policy.parameters()
-        
+
         # Update target actor parameters
         for main_name, updated_param in updated_target_actor_params.items():
             if "actor_net" in main_name:
@@ -463,12 +500,12 @@ class TD3(OffPolicyAlgorithm):
             else:
                 target_name = main_name
             all_params[target_name] = updated_param
-            
+
         # Update target critic parameters
         for main_name, updated_param in updated_target_critic_params.items():
             target_name = main_name.replace("q_net_", "q_net_target_")
             all_params[target_name] = updated_param
-        
+
         self.policy.load_state_dict(all_params, strict=False)
 
     def learn(
@@ -490,11 +527,12 @@ class TD3(OffPolicyAlgorithm):
             self.num_timesteps = 0
             self._episode_num = 0
         self._total_timesteps = total_timesteps
-        
+
         # Convert callback to proper format
         from mlx_baselines3.common.callbacks import convert_callback
+
         callback = convert_callback(callback)
-        
+
         # Initial reset
         if not hasattr(self, "_last_obs") or self._last_obs is None:
             reset_out = self.env.reset()
@@ -503,23 +541,25 @@ class TD3(OffPolicyAlgorithm):
             else:
                 obs0 = reset_out
             # Ensure batch dim for non-Vec envs
-            if not hasattr(self.env, 'num_envs') or self.n_envs == 1:
+            if not hasattr(self.env, "num_envs") or self.n_envs == 1:
                 self._last_obs = np.expand_dims(obs0, 0)
             else:
                 self._last_obs = obs0
         if not hasattr(self, "_last_episode_starts"):
             self._last_episode_starts = np.ones((self.n_envs,), dtype=bool)
-        
+
         callback.on_training_start(locals(), globals())
-        
+
         timesteps_since_last_train = 0
-        
+
         while self.num_timesteps < total_timesteps:
             # Sample action(s)
-            actions = self._sample_action(self.learning_starts, self.action_noise, n_envs=self.n_envs)
-            
+            actions = self._sample_action(
+                self.learning_starts, self.action_noise, n_envs=self.n_envs
+            )
+
             # Step the environment (handle non-Vec single env API)
-            if self.n_envs == 1 and not hasattr(self.env, 'num_envs'):
+            if self.n_envs == 1 and not hasattr(self.env, "num_envs"):
                 step_action = actions if np.asarray(actions).ndim == 1 else actions[0]
                 obs_, reward, terminated, truncated, info = self.env.step(step_action)
                 done = np.array([terminated or truncated])
@@ -529,11 +569,17 @@ class TD3(OffPolicyAlgorithm):
             else:
                 new_obs, rewards, done, infos = self.env.step(actions)
                 done = np.array(done)
-            
+
             # Ensure batch dimensions for replay buffer
-            if not isinstance(new_obs, dict) and new_obs.ndim == len(self.observation_space.shape):
+            if not isinstance(new_obs, dict) and new_obs.ndim == len(
+                self.observation_space.shape
+            ):
                 new_obs = np.expand_dims(new_obs, 0)
-            if not isinstance(self._last_obs, dict) and self._last_obs is not None and self._last_obs.ndim == len(self.observation_space.shape):
+            if (
+                not isinstance(self._last_obs, dict)
+                and self._last_obs is not None
+                and self._last_obs.ndim == len(self.observation_space.shape)
+            ):
                 last_obs_batched = np.expand_dims(self._last_obs, 0)
             else:
                 last_obs_batched = self._last_obs
@@ -543,73 +589,87 @@ class TD3(OffPolicyAlgorithm):
                 actions_batched = actions
             else:
                 actions_batched = np.expand_dims(actions, 0)
-            
+
             # Store transition in replay buffer
-            self.replay_buffer.add(last_obs_batched, new_obs, actions_batched, rewards, done, infos)
-            
+            self.replay_buffer.add(
+                last_obs_batched, new_obs, actions_batched, rewards, done, infos
+            )
+
             self._last_obs = new_obs
             self._last_episode_starts = done
-            
+
             # Increment timesteps
             self.num_timesteps += self.n_envs
             timesteps_since_last_train += self.n_envs
-            
+
             # Update learning progress
             self._update_current_progress_remaining(self.num_timesteps, total_timesteps)
-            
+
             # Train according to frequency
-            if self.num_timesteps >= self.learning_starts and timesteps_since_last_train >= int(self.train_freq):
+            if (
+                self.num_timesteps >= self.learning_starts
+                and timesteps_since_last_train >= int(self.train_freq)
+            ):
                 self.train(self.gradient_steps, batch_size=self.batch_size)
                 timesteps_since_last_train = 0
-            
+
             # Callback step
             if callback is not None and not callback.on_step():
                 break
-        
+
         callback.on_training_end()
         return self
 
     def _excluded_save_params(self) -> List[str]:
         """
         Parameters that should not be saved.
-        
+
         Returns:
             List of parameter names to exclude from saving
         """
-        return super()._excluded_save_params() + ["actor", "critic", "critic_target", "actor_target"]
+        return super()._excluded_save_params() + [
+            "actor",
+            "critic",
+            "critic_target",
+            "actor_target",
+        ]
 
     def _get_save_data(self) -> Dict[str, Any]:
         """Get data to save."""
         data = super()._get_save_data()
-        
+
         # Save TD3-specific parameters
-        data.update({
-            "tau": self.tau,
-            "gamma": self.gamma,
-            "policy_delay": self.policy_delay,
-            "target_policy_noise": self.target_policy_noise,
-            "target_noise_clip": self.target_noise_clip,
-        })
-        
+        data.update(
+            {
+                "tau": self.tau,
+                "gamma": self.gamma,
+                "policy_delay": self.policy_delay,
+                "target_policy_noise": self.target_policy_noise,
+                "target_noise_clip": self.target_noise_clip,
+            }
+        )
+
         # Save optimizer states
         if hasattr(self, "actor_optimizer_state"):
             data["actor_optimizer_state"] = self.actor_optimizer_state
         if hasattr(self, "critic_optimizer_state"):
             data["critic_optimizer_state"] = self.critic_optimizer_state
-        
+
         return data
 
     def _load_save_data(self, data: Dict[str, Any]) -> None:
         """Load data from save."""
         super()._load_save_data(data)
-        
+
         # Load TD3-specific parameters
         self.tau = data.get("tau", self.tau)
         self.gamma = data.get("gamma", self.gamma)
         self.policy_delay = data.get("policy_delay", self.policy_delay)
-        self.target_policy_noise = data.get("target_policy_noise", self.target_policy_noise)
+        self.target_policy_noise = data.get(
+            "target_policy_noise", self.target_policy_noise
+        )
         self.target_noise_clip = data.get("target_noise_clip", self.target_noise_clip)
-        
+
         # Load optimizer states
         if "actor_optimizer_state" in data:
             self.actor_optimizer_state = data["actor_optimizer_state"]
@@ -633,15 +693,17 @@ class TD3(OffPolicyAlgorithm):
     ) -> Tuple[np.ndarray, Optional[Tuple[np.ndarray, ...]]]:
         """
         Predict actions for given observations.
-        
+
         Args:
             observation: Input observations
             state: Not used in TD3
             episode_start: Not used in TD3
             deterministic: Always True for TD3 (deterministic policy)
-            
+
         Returns:
             actions: Predicted actions
             state: Not used in TD3 (returns None)
         """
-        return self.policy.predict(observation, state, episode_start, deterministic=True)
+        return self.policy.predict(
+            observation, state, episode_start, deterministic=True
+        )

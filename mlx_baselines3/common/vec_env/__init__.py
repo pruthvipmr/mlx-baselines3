@@ -11,7 +11,7 @@ from mlx_baselines3.common.vec_env.vec_normalize import VecNormalize
 
 __all__ = [
     "VecEnv",
-    "VecEnvWrapper", 
+    "VecEnvWrapper",
     "DummyVecEnv",
     "make_vec_env",
     "VecNormalize",

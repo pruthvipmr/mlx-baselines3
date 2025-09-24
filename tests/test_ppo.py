@@ -282,6 +282,55 @@ class TestPPOTraining:
         env.close()
 
 
+def test_ppo_value_function_clipping_alters_loss():
+    """Clipping the value function should change the computed loss when exceeded."""
+
+    class DummyPolicy:
+        """Minimal policy stub returning deterministic outputs for testing."""
+
+        def evaluate_actions(self, observations, actions):
+            del observations, actions
+            values = mx.array([0.0, 0.0], dtype=mx.float32)
+            log_prob = mx.zeros((2,), dtype=mx.float32)
+            entropy = mx.zeros((2,), dtype=mx.float32)
+            return values, log_prob, entropy
+
+    rollout_data = {
+        "observations": mx.zeros((2, 1), dtype=mx.float32),
+        "actions": mx.zeros((2, 1), dtype=mx.float32),
+        "advantages": mx.zeros((2,), dtype=mx.float32),
+        "log_probs": mx.zeros((2,), dtype=mx.float32),
+        "returns": mx.zeros((2,), dtype=mx.float32),
+        "values": mx.array([2.0, -2.0], dtype=mx.float32),
+    }
+
+    dummy_policy = DummyPolicy()
+
+    # Create PPO instance shell with required attribute for loss computation
+    ppo = PPO.__new__(PPO)
+    ppo.vf_coef = 1.0
+
+    unclipped_loss = ppo._compute_loss(  # noqa: SLF001
+        rollout_data,
+        dummy_policy,
+        clip_range=0.2,
+        clip_range_vf=None,
+        ent_coef=0.0,
+    )
+
+    clipped_loss = ppo._compute_loss(  # noqa: SLF001
+        rollout_data,
+        dummy_policy,
+        clip_range=0.2,
+        clip_range_vf=0.5,
+        ent_coef=0.0,
+    )
+
+    assert float(unclipped_loss) == pytest.approx(0.0)
+    assert float(clipped_loss) == pytest.approx(2.25)
+    assert float(clipped_loss) > float(unclipped_loss)
+
+
 class TestPPOSaveLoad:
     """Test PPO save and load functionality."""
 

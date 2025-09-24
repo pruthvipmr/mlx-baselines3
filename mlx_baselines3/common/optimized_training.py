@@ -119,7 +119,12 @@ class OptimizedPPOTrainer:
 
         # Compute diagnostics (only load params once at the end)
         step_stats = self._compute_step_diagnostics(
-            new_params, rollout_data, clip_range, loss_val, grad_norm
+            new_params,
+            rollout_data,
+            clip_range=clip_range,
+            clip_range_vf=clip_range_vf,
+            loss_val=loss_val,
+            grad_norm=grad_norm,
         )
 
         return new_params, new_optimizer_state, step_stats
@@ -129,6 +134,7 @@ class OptimizedPPOTrainer:
         params: Dict[str, mx.array],
         rollout_data: Dict[str, MlxArray],
         clip_range: float,
+        clip_range_vf: Optional[float],
         loss_val: mx.array,
         grad_norm: float,
     ) -> Dict[str, float]:
@@ -139,6 +145,7 @@ class OptimizedPPOTrainer:
             params: Current parameters
             rollout_data: Batch data
             clip_range: Clipping range
+            clip_range_vf: Value function clipping range
             loss_val: Total loss value
             grad_norm: Gradient norm
 
@@ -164,8 +171,16 @@ class OptimizedPPOTrainer:
         policy_loss_2 = advantages * mx.clip(ratio, 1 - clip_range, 1 + clip_range)
         policy_loss = -mx.mean(mx.minimum(policy_loss_1, policy_loss_2))
 
-        # Value loss
-        value_loss = mx.mean((rollout_data["returns"] - values) ** 2)
+        # Value loss (respect optional value clipping for logging)
+        if clip_range_vf is None:
+            value_loss = mx.mean((rollout_data["returns"] - values) ** 2)
+        else:
+            values_pred = rollout_data["values"] + mx.clip(
+                values - rollout_data["values"], -clip_range_vf, clip_range_vf
+            )
+            value_loss_unclipped = (rollout_data["returns"] - values) ** 2
+            value_loss_clipped = (rollout_data["returns"] - values_pred) ** 2
+            value_loss = mx.mean(mx.maximum(value_loss_unclipped, value_loss_clipped))
 
         # Entropy loss
         entropy_loss = -mx.mean(entropy) if entropy is not None else 0.0

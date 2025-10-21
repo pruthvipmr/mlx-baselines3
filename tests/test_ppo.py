@@ -331,6 +331,113 @@ def test_ppo_value_function_clipping_alters_loss():
     assert float(clipped_loss) > float(unclipped_loss)
 
 
+def test_ppo_uses_jit_helpers_when_available():
+    """PPO should route loss, clipping, and normalization through JIT helpers when present."""
+
+    class DummyPolicy:
+        """Policy stub using fixed tensors."""
+
+        def evaluate_actions(self, observations, actions):
+            del observations, actions
+            values = mx.array([0.3, -0.3], dtype=mx.float32)
+            log_prob = mx.array([0.05, -0.05], dtype=mx.float32)
+            entropy = mx.array([0.02, 0.02], dtype=mx.float32)
+            return values, log_prob, entropy
+
+    class StubJitOps:
+        """Collects calls to the JIT optimization helpers."""
+
+        def __init__(self):
+            self.jit_enabled = True
+            self.loss_calls = []
+            self.clip_calls = []
+            self.norm_calls = []
+            self.loss_value = mx.array(2.5, dtype=mx.float32)
+
+        def optimized_ppo_loss(
+            self,
+            values,
+            log_probs,
+            old_log_probs,
+            advantages,
+            returns,
+            old_values,
+            entropy,
+            clip_range,
+            clip_range_vf,
+            ent_coef,
+            vf_coef,
+        ):
+            self.loss_calls.append(
+                {
+                    "values": values,
+                    "log_probs": log_probs,
+                    "old_log_probs": old_log_probs,
+                    "advantages": advantages,
+                    "returns": returns,
+                    "old_values": old_values,
+                    "entropy": entropy,
+                    "clip_range": clip_range,
+                    "clip_range_vf": clip_range_vf,
+                    "ent_coef": ent_coef,
+                    "vf_coef": vf_coef,
+                }
+            )
+            return self.loss_value
+
+        def optimized_grad_clipping(self, grads, max_norm):
+            self.clip_calls.append((grads, max_norm))
+            return grads, 0.25
+
+        def normalize_advantages(self, advantages):
+            self.norm_calls.append(advantages)
+            return advantages
+
+    rollout_data = {
+        "observations": mx.zeros((2, 1), dtype=mx.float32),
+        "actions": mx.zeros((2, 1), dtype=mx.float32),
+        "advantages": mx.array([1.0, -1.0], dtype=mx.float32),
+        "log_probs": mx.array([0.1, -0.1], dtype=mx.float32),
+        "returns": mx.array([0.5, -0.5], dtype=mx.float32),
+        "values": mx.array([0.2, -0.2], dtype=mx.float32),
+    }
+
+    dummy_policy = DummyPolicy()
+    stub_ops = StubJitOps()
+
+    ppo = PPO.__new__(PPO)
+    ppo.vf_coef = 0.5
+    ppo.jit_ops = stub_ops
+
+    loss = ppo._compute_loss(  # noqa: SLF001
+        rollout_data,
+        dummy_policy,
+        clip_range=0.2,
+        clip_range_vf=0.3,
+        ent_coef=0.1,
+    )
+
+    assert stub_ops.loss_calls, "JIT loss helper was not invoked"
+    assert float(loss) == pytest.approx(float(stub_ops.loss_value))
+    recorded = stub_ops.loss_calls[0]
+    assert recorded["clip_range"] == pytest.approx(0.2)
+    assert recorded["clip_range_vf"] == pytest.approx(0.3)
+    assert recorded["vf_coef"] == pytest.approx(0.5)
+
+    grads = {"w": mx.array([1.0], dtype=mx.float32)}
+    clipped_grads, grad_norm = ppo._clip_gradients(grads, 0.5)  # noqa: SLF001
+
+    assert stub_ops.clip_calls, "JIT grad clip helper was not invoked"
+    assert grad_norm == pytest.approx(0.25)
+    assert mx.array_equal(clipped_grads["w"], grads["w"])
+
+    advantages = mx.array([2.0, -2.0], dtype=mx.float32)
+    normalized = ppo._normalize_advantages(advantages)  # noqa: SLF001
+
+    assert stub_ops.norm_calls, "JIT advantage normalization helper was not invoked"
+    assert mx.array_equal(normalized, advantages)
+
+
 class TestPPOSaveLoad:
     """Test PPO save and load functionality."""
 

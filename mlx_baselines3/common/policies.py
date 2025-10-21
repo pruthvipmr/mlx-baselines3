@@ -7,7 +7,7 @@ types of RL algorithms.
 """
 
 from abc import abstractmethod
-from typing import Any, Dict, List, Optional, Tuple, Type, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
 import gymnasium as gym
 import mlx.core as mx
 import mlx.nn as nn
@@ -123,6 +123,62 @@ class BasePolicy(MlxModule):
             Estimated values
         """
         pass
+
+    @abstractmethod
+    def evaluate_actions_functional(
+        self,
+        params: Dict[str, MlxArray],
+        observations: MlxArray,
+        actions: MlxArray,
+    ) -> Tuple[MlxArray, MlxArray, Optional[MlxArray]]:
+        """
+        Functional evaluation that uses explicit parameters instead of module state.
+
+        Args:
+            params: Parameter dictionary, typically from ``state_dict()``
+            observations: Batch of observations
+            actions: Batch of actions that were taken
+
+        Returns:
+            Tuple of (values, log_prob, entropy) as pure MLX arrays. Entropy
+            may be ``None`` when not defined by a distribution.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def act_functional(
+        self,
+        params: Dict[str, MlxArray],
+        observations: MlxArray,
+    ) -> Tuple[MlxArray, MlxArray, MlxArray]:
+        """
+        Functional action selection that samples using explicit parameters.
+
+        Args:
+            params: Parameter dictionary, typically from ``state_dict()``
+            observations: Batch of observations to act on
+
+        Returns:
+            Tuple of (actions, log_prob, values) as pure MLX arrays.
+        """
+        raise NotImplementedError
+
+    def _with_temporary_params(
+        self, params: Dict[str, MlxArray], fn: Callable[[], Tuple[Any, ...]]
+    ) -> Tuple[Any, ...]:
+        """
+        Execute ``fn`` after temporarily loading ``params`` into the module.
+
+        Note: This helper keeps current implementations working until policies
+        expose fully functional (side-effect free) evaluation paths.
+        """
+        original_params = self.state_dict()
+
+        try:
+            self.load_state_dict(params, strict=False)
+            return fn()
+        finally:
+            self.load_state_dict(original_params, strict=False)
 
     def predict(
         self,
@@ -479,6 +535,47 @@ class ActorCriticPolicy(BasePolicy):
         """
         return self.forward(obs, deterministic=deterministic)
 
+    def evaluate_actions_functional(
+        self,
+        params: Dict[str, MlxArray],
+        observations: MlxArray,
+        actions: MlxArray,
+    ) -> Tuple[MlxArray, MlxArray, Optional[MlxArray]]:
+        """
+        Evaluate actions using explicit parameters.
+
+        Note: This temporarily loads parameters and will be replaced by a pure
+        functional implementation in a later phase.
+        """
+
+        def _evaluate() -> Tuple[MlxArray, MlxArray, MlxArray]:
+            values, log_prob, entropy = self.evaluate_actions(
+                observations, actions
+            )
+            return values, log_prob, entropy
+
+        values, log_prob, entropy = self._with_temporary_params(params, _evaluate)
+        return values, log_prob, entropy
+
+    def act_functional(
+        self,
+        params: Dict[str, MlxArray],
+        observations: MlxArray,
+    ) -> Tuple[MlxArray, MlxArray, MlxArray]:
+        """
+        Select actions using explicit parameters.
+
+        Note: This temporarily loads parameters and will be replaced by a pure
+        functional implementation in a later phase.
+        """
+
+        def _act() -> Tuple[MlxArray, MlxArray, MlxArray]:
+            actions, values, log_prob = self.forward(observations, deterministic=False)
+            return actions, log_prob, values
+
+        actions, log_prob, values = self._with_temporary_params(params, _act)
+        return actions, log_prob, values
+
     def functional_evaluate_actions(
         self, params: Dict[str, mx.array], obs: MlxArray, actions: MlxArray
     ) -> Tuple[MlxArray, MlxArray, MlxArray]:
@@ -497,21 +594,10 @@ class ActorCriticPolicy(BasePolicy):
         Returns:
             Tuple of (estimated values, log prob of actions, entropy)
         """
-        # Save current state
-        original_params = self.state_dict()
-
-        try:
-            # Temporarily load functional params
-            self.load_state_dict(params, strict=False)
-
-            # Evaluate with temporary params
-            values, log_prob, entropy = self.evaluate_actions(obs, actions)
-
-            return values, log_prob, entropy
-
-        finally:
-            # Restore original state
-            self.load_state_dict(original_params, strict=False)
+        values, log_prob, entropy = self.evaluate_actions_functional(
+            params, obs, actions
+        )
+        return values, log_prob, entropy
 
     def create_functional_apply_fn(self):
         """

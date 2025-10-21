@@ -7,7 +7,7 @@ leading to more stable training compared to vanilla policy gradients.
 
 import time
 import warnings
-from typing import Any, Dict, Optional, Type, Union
+from typing import Any, Dict, Optional, Tuple, Type, Union
 
 import gymnasium as gym
 import mlx.core as mx
@@ -25,6 +25,11 @@ from mlx_baselines3.common.optimizers import (
     compute_loss_and_grads,
 )
 from mlx_baselines3.common.schedules import apply_schedule_to_param
+from mlx_baselines3.common.jit_optimizations import (
+    create_jit_optimizer,
+    jit_advantage_normalization,
+    jit_ppo_loss_core,
+)
 
 
 class PPO(OnPolicyAlgorithm):
@@ -87,6 +92,9 @@ class PPO(OnPolicyAlgorithm):
         self.vf_coef = vf_coef
         self.max_grad_norm = max_grad_norm
         self.target_kl = target_kl
+
+        # Initialize JIT-optimized helpers upfront so they are available during setup.
+        self.jit_ops = create_jit_optimizer()
 
         super().__init__(
             policy=policy,
@@ -213,6 +221,75 @@ class PPO(OnPolicyAlgorithm):
         """Get current value from schedule or return constant."""
         return apply_schedule_to_param(schedule, self._current_progress_remaining)
 
+    def _normalize_advantages(self, advantages: MlxArray) -> MlxArray:
+        """Normalize advantages using JIT helpers when available."""
+        jit_ops = getattr(self, "jit_ops", None)
+        if jit_ops is not None and getattr(jit_ops, "jit_enabled", False):
+            return jit_ops.normalize_advantages(advantages)
+        return jit_advantage_normalization(advantages)
+
+    def _compute_total_loss(
+        self,
+        values: MlxArray,
+        log_probs: MlxArray,
+        old_log_probs: MlxArray,
+        advantages: MlxArray,
+        returns: MlxArray,
+        old_values: MlxArray,
+        entropy: Optional[MlxArray],
+        clip_range: float,
+        clip_range_vf: Optional[float],
+        ent_coef: float,
+    ) -> MlxArray:
+        """Compute PPO loss via MLX JIT when available."""
+        entropy_tensor = entropy if entropy is not None else mx.zeros_like(log_probs)
+        vf_clip = 0.0 if clip_range_vf is None else float(clip_range_vf)
+        jit_ops = getattr(self, "jit_ops", None)
+        if jit_ops is not None and getattr(jit_ops, "jit_enabled", False):
+            return jit_ops.optimized_ppo_loss(
+                values,
+                log_probs,
+                old_log_probs,
+                advantages,
+                returns,
+                old_values,
+                entropy_tensor,
+                clip_range,
+                vf_clip,
+                ent_coef,
+                self.vf_coef,
+            )
+        return jit_ppo_loss_core(
+            values,
+            log_probs,
+            old_log_probs,
+            advantages,
+            returns,
+            old_values,
+            entropy_tensor,
+            clip_range,
+            vf_clip,
+            ent_coef,
+            self.vf_coef,
+        )
+
+    def _clip_gradients(
+        self, grads: Dict[str, mx.array], max_norm: float
+    ) -> Tuple[Dict[str, mx.array], float]:
+        """Clip gradients using JIT helpers when available."""
+        grad_inputs: Dict[str, Optional[mx.array]] = {k: v for k, v in grads.items()}
+        jit_ops = getattr(self, "jit_ops", None)
+        if jit_ops is not None and getattr(jit_ops, "jit_enabled", False):
+            clipped, grad_norm = jit_ops.optimized_grad_clipping(grad_inputs, max_norm)
+        else:
+            clipped, grad_norm = clip_grad_norm(grad_inputs, max_norm)
+
+        cleaned: Dict[str, mx.array] = {
+            key: clipped_val if clipped_val is not None else grads[key]
+            for key, clipped_val in clipped.items()
+        }
+        return cleaned, grad_norm
+
     def collect_rollouts(
         self,
         env: VecEnv,
@@ -337,7 +414,7 @@ class PPO(OnPolicyAlgorithm):
 
                 # Clip gradients using improved clipping function
                 if self.max_grad_norm is not None:
-                    grads, _ = clip_grad_norm(grads, self.max_grad_norm)
+                    grads, _ = self._clip_gradients(grads, self.max_grad_norm)
 
                 # Update parameters using optimizer adapter
                 if (
@@ -375,15 +452,18 @@ class PPO(OnPolicyAlgorithm):
                 )
                 values = mx.flatten(values)
 
-                # Normalize advantages
-                advantages = rollout_data["advantages"]
-                if len(advantages) > 1:
-                    advantages = (advantages - mx.mean(advantages)) / (
-                        mx.std(advantages) + 1e-8
-                    )
+                returns = mx.flatten(rollout_data["returns"])
+                old_values = mx.flatten(rollout_data["values"])
+
+                old_log_probs = mx.flatten(rollout_data["log_probs"])
+
+                # Normalize advantages for metrics
+                advantages = self._normalize_advantages(
+                    mx.flatten(rollout_data["advantages"])
+                )
 
                 # Ratio between old and new policy
-                ratio = mx.exp(log_prob - rollout_data["log_probs"])
+                ratio = mx.exp(log_prob - old_log_probs)
 
                 # Clipped surrogate loss
                 policy_loss_1 = advantages * ratio
@@ -401,14 +481,14 @@ class PPO(OnPolicyAlgorithm):
                 # Value loss
                 if clip_range_vf is None:
                     # No clipping
-                    value_loss = mx.mean((rollout_data["returns"] - values) ** 2)
+                    value_loss = mx.mean((returns - values) ** 2)
                 else:
                     # Clipped value loss
-                    values_pred = rollout_data["values"] + mx.clip(
-                        values - rollout_data["values"], -clip_range_vf, clip_range_vf
+                    values_pred = old_values + mx.clip(
+                        values - old_values, -clip_range_vf, clip_range_vf
                     )
-                    value_loss_1 = (rollout_data["returns"] - values) ** 2
-                    value_loss_2 = (rollout_data["returns"] - values_pred) ** 2
+                    value_loss_1 = (returns - values) ** 2
+                    value_loss_2 = (returns - values_pred) ** 2
                     value_loss = mx.mean(mx.maximum(value_loss_1, value_loss_2))
 
                 # Entropy loss
@@ -420,7 +500,7 @@ class PPO(OnPolicyAlgorithm):
                 entropy_losses.append(float(entropy_loss))
 
                 # Approximate KL divergence for early stopping
-                log_ratio = log_prob - rollout_data["log_probs"]
+                log_ratio = log_prob - old_log_probs
                 approx_kl_div = mx.mean((mx.exp(log_ratio) - 1) - log_ratio)
                 approx_kl_divs.append(float(approx_kl_div))
 
@@ -470,37 +550,23 @@ class PPO(OnPolicyAlgorithm):
         )
         values = mx.flatten(values)
 
-        # Normalize advantages
-        advantages = rollout_data["advantages"]
-        if len(advantages) > 1:
-            advantages = (advantages - mx.mean(advantages)) / (
-                mx.std(advantages) + 1e-8
-            )
+        returns = mx.flatten(rollout_data["returns"])
+        old_values = mx.flatten(rollout_data["values"])
+        advantages = mx.flatten(rollout_data["advantages"])
+        old_log_probs = mx.flatten(rollout_data["log_probs"])
 
-        # Ratio between old and new policy
-        ratio = mx.exp(log_prob - rollout_data["log_probs"])
-
-        # Clipped surrogate loss
-        policy_loss_1 = advantages * ratio
-        policy_loss_2 = advantages * mx.clip(ratio, 1 - clip_range, 1 + clip_range)
-        policy_loss = -mx.mean(mx.minimum(policy_loss_1, policy_loss_2))
-
-        # Value loss
-        if clip_range_vf is None:
-            value_loss = mx.mean((rollout_data["returns"] - values) ** 2)
-        else:
-            values_pred = rollout_data["values"] + mx.clip(
-                values - rollout_data["values"], -clip_range_vf, clip_range_vf
-            )
-            value_loss_1 = (rollout_data["returns"] - values) ** 2
-            value_loss_2 = (rollout_data["returns"] - values_pred) ** 2
-            value_loss = mx.mean(mx.maximum(value_loss_1, value_loss_2))
-
-        # Entropy loss
-        entropy_loss = -mx.mean(entropy) if entropy is not None else 0.0
-
-        # Total loss
-        return policy_loss + ent_coef * entropy_loss + self.vf_coef * value_loss
+        return self._compute_total_loss(
+            values,
+            log_prob,
+            old_log_probs,
+            advantages,
+            returns,
+            old_values,
+            entropy,
+            clip_range,
+            clip_range_vf,
+            ent_coef,
+        )
 
     def learn(
         self,

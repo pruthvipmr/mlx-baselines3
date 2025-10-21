@@ -1,10 +1,58 @@
 """Helpers for optionally using MLX JIT-compiled kernels."""
 
+# Implementation Checklist
+# Phase 1: Foundation [x] (baseline JIT helpers and scaffolding complete).
+# Phase 2: PPO [x]
+#   - [x] Wire PPO loss through jit_ppo_loss_core via JITOptimizedOperations.
+#   - [x] Clip gradients with jit-assisted helpers from PPO training loop.
+#   - [x] Normalize advantages using the compiled helper.
+#   - [x] Add regression: tests/test_ppo.py::test_ppo_uses_jit_helpers_when_available.
+# Phase 3: Remaining algorithms [ ]
+
 from __future__ import annotations
 
 from typing import Any, Callable, Dict, List, Optional, Tuple, cast
 
 import mlx.core as mx
+
+
+def global_grad_norm(grads: Dict[str, Optional[mx.array]]) -> mx.array:
+    """
+    Compute the global L2 norm across all gradients in the dictionary.
+
+    Args:
+        grads: Mapping of parameter names to gradients (may include None entries)
+
+    Returns:
+        Scalar MLX array containing the global gradient norm
+    """
+    flat_grads = [mx.flatten(g) for g in grads.values() if g is not None]
+    if not flat_grads:
+        return mx.array(0.0)
+    concatenated = mx.concatenate(flat_grads)
+    return mx.sqrt(mx.sum(concatenated**2))
+
+
+def clip_grads_by_global_norm(
+    grads: Dict[str, Optional[mx.array]], max_norm: float
+) -> Tuple[Dict[str, Optional[mx.array]], mx.array]:
+    """
+    Clip gradients based on their global norm.
+
+    Args:
+        grads: Mapping of parameter names to gradients (may include None entries)
+        max_norm: Maximum allowed norm for the gradients
+
+    Returns:
+        Tuple containing the clipped gradient dictionary and the original norm
+    """
+    grad_norm = global_grad_norm(grads)
+    clip_coef = mx.minimum(max_norm / (grad_norm + 1e-8), 1.0)
+    clipped = {
+        name: (grad * clip_coef if grad is not None else None)
+        for name, grad in grads.items()
+    }
+    return clipped, grad_norm
 
 
 def jit_loss_computation(func: Callable[..., Any]) -> Callable[..., Any]:
@@ -159,6 +207,14 @@ class JITOptimizedOperations:
             "grad_clip": jit_gradient_clipping,
             "advantage_norm": jit_advantage_normalization,
         }
+
+    def normalize_advantages(self, advantages: mx.array) -> mx.array:
+        """
+        Normalize advantages with JIT kernel when available.
+        """
+        if self.jit_enabled:
+            return self.compiled_ops["advantage_norm"](advantages)
+        return jit_advantage_normalization(advantages)
 
     def optimized_ppo_loss(
         self,

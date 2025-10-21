@@ -405,6 +405,43 @@ class TD3Policy(BasePolicy):
         values = mx.minimum(q_values[0], q_values[1]).squeeze(-1)
         return values
 
+    def evaluate_actions_functional(
+        self,
+        params: Dict[str, mx.array],
+        observations: mx.array,
+        actions: mx.array,
+    ) -> Tuple[mx.array, mx.array, Optional[mx.array]]:
+        """
+        Evaluate Q-values for provided actions using explicit parameters.
+
+        Returns concatenated critic outputs and placeholder log-probabilities.
+        """
+
+        def _evaluate() -> Tuple[mx.array, mx.array, Optional[mx.array]]:
+            features = self.extract_features(observations)
+            q_values = self.critic_forward(features, actions)
+            q_values_concat = mx.concatenate(q_values, axis=-1)
+            log_prob = mx.zeros(q_values_concat.shape[:-1])
+            return q_values_concat, log_prob, None
+
+        return self._with_temporary_params(params, _evaluate)
+
+    def act_functional(
+        self,
+        params: Dict[str, mx.array],
+        observations: mx.array,
+    ) -> Tuple[mx.array, mx.array, mx.array]:
+        """
+        Select deterministic actions using explicit parameters.
+        """
+
+        def _act() -> Tuple[mx.array, mx.array, mx.array]:
+            actions, values, log_prob = self.forward(observations, deterministic=True)
+            return actions, log_prob, values
+
+        actions, log_prob, values = self._with_temporary_params(params, _act)
+        return actions, log_prob, values
+
     def __call__(
         self, obs: mx.array, deterministic: bool = True
     ) -> Tuple[mx.array, mx.array, mx.array]:

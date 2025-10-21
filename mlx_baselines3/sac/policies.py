@@ -408,6 +408,60 @@ class SACPolicy(BasePolicy):
         values = mx.minimum(q_values[0], q_values[1]).squeeze(-1)
         return values
 
+    def evaluate_actions_functional(
+        self,
+        params: Dict[str, mx.array],
+        observations: mx.array,
+        actions: mx.array,
+    ) -> Tuple[mx.array, mx.array, Optional[mx.array]]:
+        """
+        Evaluate Q-values and log probabilities using explicit parameters.
+
+        Returns concatenated critic outputs (Q1, Q2, ...), log π(a|s), and
+        entropy estimates. This temporarily loads parameters and will be
+        replaced by a pure functional path in later phases.
+        """
+
+        def _evaluate() -> Tuple[mx.array, mx.array, mx.array]:
+            features = self.extract_features(observations)
+            actor_output = self.actor_net(features)
+            mean = self.mu(actor_output)
+            log_std = self.log_std(actor_output)
+
+            mean = mx.clip(mean, -self.clip_mean, self.clip_mean)
+            log_std = mx.clip(log_std, -20, 2)
+
+            dist = self.action_dist.proba_distribution(mean, log_std)
+            log_prob = dist.log_prob(actions)
+            entropy = dist.entropy()
+
+            q_values = self.critic_forward(features, actions)
+            q_values_concat = mx.concatenate(q_values, axis=-1)
+
+            return q_values_concat, log_prob, entropy
+
+        q_values, log_prob, entropy = self._with_temporary_params(params, _evaluate)
+        return q_values, log_prob, entropy
+
+    def act_functional(
+        self,
+        params: Dict[str, mx.array],
+        observations: mx.array,
+    ) -> Tuple[mx.array, mx.array, mx.array]:
+        """
+        Sample actions and associated statistics using explicit parameters.
+
+        This temporarily loads parameters and will be replaced by a pure
+        functional path in later phases.
+        """
+
+        def _act() -> Tuple[mx.array, mx.array, mx.array]:
+            actions, values, log_prob = self.forward(observations, deterministic=False)
+            return actions, log_prob, values
+
+        actions, log_prob, values = self._with_temporary_params(params, _act)
+        return actions, log_prob, values
+
     def __call__(
         self, obs: mx.array, deterministic: bool = False
     ) -> Tuple[mx.array, mx.array, mx.array]:

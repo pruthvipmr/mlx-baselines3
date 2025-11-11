@@ -231,13 +231,9 @@ def sac_functional_loss(
     next_actions, next_log_probs = policy_apply_fn(params, next_obs)
     next_actions = mx.stop_gradient(next_actions)
     next_log_probs = mx.stop_gradient(next_log_probs)
-    target_q1, target_q2 = critic_apply_fn(
-        target_critic_params, next_obs, next_actions
-    )
+    target_q1, target_q2 = critic_apply_fn(target_critic_params, next_obs, next_actions)
     target_q = mx.minimum(target_q1, target_q2) - alpha * next_log_probs
-    target_q_values = mx.stop_gradient(
-        rewards + gamma * (1 - terminated) * target_q
-    )
+    target_q_values = mx.stop_gradient(rewards + gamma * (1 - terminated) * target_q)
 
     current_q1, current_q2 = critic_apply_fn(params, obs, actions)
     critic1_loss = mx.mean((current_q1 - target_q_values) ** 2)

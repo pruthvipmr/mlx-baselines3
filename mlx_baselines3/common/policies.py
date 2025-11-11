@@ -549,9 +549,7 @@ class ActorCriticPolicy(BasePolicy):
         """
 
         def _evaluate() -> Tuple[MlxArray, MlxArray, MlxArray]:
-            values, log_prob, entropy = self.evaluate_actions(
-                observations, actions
-            )
+            values, log_prob, entropy = self.evaluate_actions(observations, actions)
             return values, log_prob, entropy
 
         values, log_prob, entropy = self._with_temporary_params(params, _evaluate)

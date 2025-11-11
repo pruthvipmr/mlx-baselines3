@@ -3,7 +3,6 @@ MLX-specific utilities for device management, tensor operations, and helper
 functions.
 """
 
-import math
 import random
 import warnings
 from typing import Any, Callable, Dict, Mapping, Optional, Tuple, Union

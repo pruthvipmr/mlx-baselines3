@@ -1,14 +1,15 @@
 from __future__ import annotations
 
-"""
-Unified array types for MLX Baselines3.
-
-This module provides consistent type aliases for arrays that work with both
-NumPy and MLX arrays, avoiding the type mismatches that were causing many
-mypy errors throughout the codebase.
-"""
-
-from typing import TYPE_CHECKING, Any, Mapping, Protocol, TypeGuard, TypedDict, Union, runtime_checkable
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Mapping,
+    Protocol,
+    TypeGuard,
+    TypedDict,
+    Union,
+    runtime_checkable,
+)
 
 try:
     from typing import TypeAlias
@@ -17,6 +18,14 @@ except ImportError:  # pragma: no cover - fallback for older Python
 
 import numpy as np
 from numpy.typing import NDArray
+
+"""
+Unified array types for MLX Baselines3.
+
+This module provides consistent type aliases for arrays that work with both
+NumPy and MLX arrays, avoiding the type mismatches that were causing many
+mypy errors throughout the codebase.
+"""
 
 
 if TYPE_CHECKING:
@@ -55,9 +64,10 @@ else:
 @runtime_checkable
 class ArrayProtocol(Protocol):
     """Protocol for array-like objects supporting basic array operations."""
+
     shape: tuple[int, ...]
     dtype: Any
-    
+
     def astype(self, dtype: Any) -> ArrayProtocol: ...
 
 
@@ -76,7 +86,7 @@ Action = ArrayLike  # keep as array-like only
 BatchObs = Union[ArrayLike, Mapping[str, ArrayLike]]
 BatchAction = ArrayLike
 
-# For backward compatibility 
+# For backward compatibility
 ObsType = Obs
 """Type for observations."""
 
@@ -87,7 +97,7 @@ ActionType = Action
 PolicyOutputType = tuple[ArrayLike, ArrayLike | None]
 """Type for policy outputs: (actions, log_probs or states)."""
 
-# For value function outputs  
+# For value function outputs
 ValueType = ArrayLike
 """Type for value function outputs."""
 
@@ -95,11 +105,13 @@ ValueType = ArrayLike
 Shape = tuple[int, ...]
 """Type for array shapes."""
 
+
 # Episode info TypedDict
 class EpisodeInfo(TypedDict, total=False):
     """Episode information dictionary."""
+
     r: float  # reward
-    l: float  # length
+    length: float  # episode length
     t: float  # time
 
 
@@ -123,7 +135,7 @@ def is_dict_obs(x: Any) -> TypeGuard[Mapping[str, ArrayLike]]:
 @runtime_checkable
 class PolicyProtocol(Protocol):
     """Protocol for policy objects."""
-    
+
     def predict(
         self,
         observation: BatchObs,
@@ -133,38 +145,35 @@ class PolicyProtocol(Protocol):
     ) -> tuple[ArrayLike, ArrayLike | None]: ...
 
 
-# VecEnv Protocol  
+# VecEnv Protocol
 @runtime_checkable
 class VecEnvProtocol(Protocol):
     """Protocol for vectorized environments."""
+
     num_envs: int
-    
+
     def reset(
-        self, 
-        *, 
-        seed: int | None = None, 
-        options: dict[str, Any] | None = None
+        self, *, seed: int | None = None, options: dict[str, Any] | None = None
     ) -> tuple[Obs, dict]: ...
-    
+
     def step(
-        self, 
-        actions: np.ndarray
+        self, actions: np.ndarray
     ) -> tuple[Obs, np.ndarray, np.ndarray, np.ndarray, list[dict]]: ...
 
 
 # ReplayBuffer Protocol
-@runtime_checkable  
+@runtime_checkable
 class ReplayBufferProtocol(Protocol):
     """Protocol for replay buffers."""
-    
+
     def add(
-        self, 
-        obs: Obs, 
-        next_obs: Obs, 
-        action: np.ndarray, 
-        reward: np.ndarray, 
-        done: np.ndarray, 
-        infos: list[dict]
+        self,
+        obs: Obs,
+        next_obs: Obs,
+        action: np.ndarray,
+        reward: np.ndarray,
+        done: np.ndarray,
+        infos: list[dict],
     ) -> None: ...
-    
+
     def sample(self, batch_size: int) -> dict[str, np.ndarray]: ...

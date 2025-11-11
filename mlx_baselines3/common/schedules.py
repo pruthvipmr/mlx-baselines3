@@ -98,7 +98,9 @@ def piecewise_schedule(
     return schedule_fn
 
 
-def exponential_schedule(initial_value: float, decay_rate: float = 0.95) -> StepSchedule:
+def exponential_schedule(
+    initial_value: float, decay_rate: float = 0.95
+) -> StepSchedule:
     """
     Create an exponential decay schedule.
 
@@ -230,7 +232,9 @@ def make_progress_schedule(
 
 
 # Common schedule presets for convenience
-def get_linear_schedule(initial_value: float, final_value: float = 0.0) -> ProgressSchedule:
+def get_linear_schedule(
+    initial_value: float, final_value: float = 0.0
+) -> ProgressSchedule:
     """Convenience function for creating linear decay schedules."""
     return linear_schedule(initial_value, final_value)
 

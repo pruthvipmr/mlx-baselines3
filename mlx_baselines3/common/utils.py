@@ -193,7 +193,7 @@ def get_linear_fn(
 
 
 def get_schedule_fn(
-    value_schedule: Union[float, str, Callable[[float], float]]
+    value_schedule: Union[float, str, Callable[[float], float]],
 ) -> Callable[[float], float]:
     """
     Transform schedule string/value to a schedule function.

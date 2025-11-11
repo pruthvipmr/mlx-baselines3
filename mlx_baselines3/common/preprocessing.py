@@ -329,9 +329,7 @@ def flatten_obs(
                 sub_obs = obs[key]
                 subspace = observation_space.spaces[key]
                 if isinstance(sub_obs, dict):
-                    flattened_parts.append(
-                        flatten_obs(sub_obs, subspace).flatten()
-                    )
+                    flattened_parts.append(flatten_obs(sub_obs, subspace).flatten())
                 elif isinstance(sub_obs, np.ndarray):
                     flattened_parts.append(sub_obs.flatten())
                 else:

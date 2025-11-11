@@ -332,7 +332,8 @@ def test_ppo_value_function_clipping_alters_loss():
 
 
 def test_ppo_uses_jit_helpers_when_available():
-    """PPO should route loss, clipping, and normalization through JIT helpers when present."""
+    """PPO should route loss, clipping, and normalization through JIT helpers
+    when present."""
 
     class DummyPolicy:
         """Policy stub using fixed tensors."""

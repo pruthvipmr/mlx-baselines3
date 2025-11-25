@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 Array utility functions for converting between NumPy and MLX arrays.
 
@@ -7,6 +5,8 @@ This module provides typed conversion functions to handle the boundary
 between NumPy arrays (used in gym environments and buffers) and MLX arrays
 (used in neural network computations).
 """
+
+from __future__ import annotations
 
 from typing import Any, Mapping, overload
 

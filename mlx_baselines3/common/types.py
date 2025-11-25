@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 Unified array types for MLX Baselines3.
 
@@ -8,7 +6,18 @@ NumPy and MLX arrays, avoiding the type mismatches that were causing many
 mypy errors throughout the codebase.
 """
 
-from typing import TYPE_CHECKING, Any, Mapping, Protocol, TypeGuard, TypedDict, Union, runtime_checkable
+from __future__ import annotations
+
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Mapping,
+    Protocol,
+    TypeGuard,
+    TypedDict,
+    Union,
+    runtime_checkable,
+)
 
 try:
     from typing import TypeAlias
@@ -99,7 +108,7 @@ Shape = tuple[int, ...]
 class EpisodeInfo(TypedDict, total=False):
     """Episode information dictionary."""
     r: float  # reward
-    l: float  # length
+    l: float  # length  # noqa: E741
     t: float  # time
 
 

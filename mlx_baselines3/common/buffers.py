@@ -332,8 +332,7 @@ class RolloutBuffer(BaseBuffer):
         if isinstance(self.observations, dict):
             obs_dict = cast(Dict[str, np.ndarray], self.observations)
             flat_obs: Dict[str, np.ndarray] = {
-                key: obs.reshape(-1, *obs.shape[2:])
-                for key, obs in obs_dict.items()
+                key: obs.reshape(-1, *obs.shape[2:]) for key, obs in obs_dict.items()
             }
             return flat_obs
         else:
@@ -384,15 +383,11 @@ class ReplayBuffer(BaseBuffer):
 
         # Store next observations unless optimizing memory
         if not self.optimize_memory_usage:
-            self.next_observations: Optional[
-                Union[np.ndarray, Dict[str, np.ndarray]]
-            ]
+            self.next_observations: Optional[Union[np.ndarray, Dict[str, np.ndarray]]]
             if isinstance(self.observation_space, gym.spaces.Dict):
                 next_obs: Dict[str, np.ndarray] = {}
                 for key, subspace in self.observation_space.spaces.items():
-                    obs_shape = (self.buffer_size, self.n_envs) + _space_shape(
-                        subspace
-                    )
+                    obs_shape = (self.buffer_size, self.n_envs) + _space_shape(subspace)
                     next_obs[key] = np.zeros(obs_shape, dtype=subspace.dtype)
                 self.next_observations = next_obs
             else:
@@ -406,9 +401,7 @@ class ReplayBuffer(BaseBuffer):
         if isinstance(self.observation_space, gym.spaces.Dict):
             final_obs: Dict[str, np.ndarray] = {}
             for key, subspace in self.observation_space.spaces.items():
-                obs_shape = (self.buffer_size, self.n_envs) + _space_shape(
-                    subspace
-                )
+                obs_shape = (self.buffer_size, self.n_envs) + _space_shape(subspace)
                 final_obs[key] = np.zeros(obs_shape, dtype=subspace.dtype)
             self.final_observations = final_obs
         else:

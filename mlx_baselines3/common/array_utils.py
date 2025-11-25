@@ -27,41 +27,43 @@ MLX_AVAILABLE = mx is not None
 @overload
 def as_numpy(x: NDArray[Any]) -> NDArray[Any]: ...
 
-@overload  
+
+@overload
 def as_numpy(x: Any) -> NDArray[Any]: ...
+
 
 def as_numpy(x: ArrayLike) -> NumpyArray:
     """Convert an array-like object to a NumPy array.
-    
+
     Args:
         x: Array-like object (NumPy array, MLX array, or compatible)
-        
+
     Returns:
         NumPy array
     """
     if isinstance(x, np.ndarray):
         return x
-    
-    if MLX_AVAILABLE and hasattr(x, '__array__'):
+
+    if MLX_AVAILABLE and hasattr(x, "__array__"):
         # MLX arrays support __array__ protocol
         return np.asarray(x)
-    
-    if hasattr(x, 'numpy'):
+
+    if hasattr(x, "numpy"):
         # Some frameworks have .numpy() method
         return x.numpy()
-        
+
     return np.asarray(x)
 
 
 def ensure_mlx(x: ArrayLike) -> MlxArray:
     """Convert an array-like object to an MLX array.
-    
+
     Args:
         x: Array-like object (NumPy array, MLX array, or compatible)
-        
+
     Returns:
         MLX array
-        
+
     Raises:
         ImportError: If MLX is not available
     """
@@ -80,17 +82,19 @@ def ensure_mlx(x: ArrayLike) -> MlxArray:
 @overload
 def obs_as_mlx(obs: ArrayLike) -> MlxArray: ...
 
+
 @overload
 def obs_as_mlx(obs: Mapping[str, ArrayLike]) -> dict[str, MlxArray]: ...
 
+
 def obs_as_mlx(obs: Obs) -> MlxArray | dict[str, MlxArray]:
     """Convert observations to MLX arrays.
-    
+
     Handles both single observations and dictionary observations.
-    
+
     Args:
         obs: Observation(s) to convert
-        
+
     Returns:
         MLX array or dict of MLX arrays
     """
@@ -100,21 +104,23 @@ def obs_as_mlx(obs: Obs) -> MlxArray | dict[str, MlxArray]:
         return ensure_mlx(obs)
 
 
-# Overloaded obs_as_numpy functions  
+# Overloaded obs_as_numpy functions
 @overload
 def obs_as_numpy(obs: ArrayLike) -> NumpyArray: ...
+
 
 @overload
 def obs_as_numpy(obs: Mapping[str, ArrayLike]) -> dict[str, NumpyArray]: ...
 
+
 def obs_as_numpy(obs: Obs) -> NumpyArray | dict[str, NumpyArray]:
     """Convert observations to NumPy arrays.
-    
+
     Handles both single observations and dictionary observations.
-    
+
     Args:
         obs: Observation(s) to convert
-        
+
     Returns:
         NumPy array or dict of NumPy arrays
     """

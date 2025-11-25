@@ -51,6 +51,8 @@ class SAC(OffPolicyAlgorithm):
         batch_size: Batch size for training
         tau: The soft update coefficient for target networks
         gamma: Discount factor
+        target_update_interval: Update target networks every `target_update_interval`
+            gradient steps
         train_freq: Update the model every `train_freq` steps
         gradient_steps: How many gradient steps to do after each rollout
         action_noise: Action noise type for exploration
@@ -85,6 +87,7 @@ class SAC(OffPolicyAlgorithm):
         batch_size: int = 256,
         tau: float = 0.005,
         gamma: float = 0.99,
+        target_update_interval: int = 1,
         train_freq: Union[int, Tuple[int, str]] = 1,
         gradient_steps: int = 1,
         action_noise: Optional[Any] = None,
@@ -110,6 +113,7 @@ class SAC(OffPolicyAlgorithm):
         self.batch_size = batch_size
         self.tau = tau
         self.gamma = gamma
+        self.target_update_interval = target_update_interval
         self.train_freq = train_freq
         self.gradient_steps = gradient_steps
         self.action_noise = action_noise
@@ -329,11 +333,12 @@ class SAC(OffPolicyAlgorithm):
                 ent_coef_losses.append(float(ent_coef_loss))
                 ent_coefs.append(float(ent_coef))
 
-            # Update target networks
-            self._update_target_networks()
+            # Update target networks on schedule
+            if (self._n_updates + 1) % self.target_update_interval == 0:
+                self._update_target_networks()
 
-        # Increment number of updates
-        self._n_updates += gradient_steps
+            # Increment number of updates
+            self._n_updates += 1
 
         # Store training stats (optional logger)
         if hasattr(self, "logger") and self.logger is not None:
@@ -697,6 +702,7 @@ class SAC(OffPolicyAlgorithm):
             {
                 "tau": self.tau,
                 "gamma": self.gamma,
+                "target_update_interval": self.target_update_interval,
                 "ent_coef": self.ent_coef,
                 "target_entropy": self.target_entropy,
                 "use_sde": self.use_sde,
@@ -726,6 +732,9 @@ class SAC(OffPolicyAlgorithm):
         # Load SAC-specific parameters
         self.tau = data.get("tau", self.tau)
         self.gamma = data.get("gamma", self.gamma)
+        self.target_update_interval = data.get(
+            "target_update_interval", self.target_update_interval
+        )
         self.ent_coef = data.get("ent_coef", self.ent_coef)
         self.target_entropy = data.get("target_entropy", self.target_entropy)
         self.use_sde = data.get("use_sde", self.use_sde)

@@ -593,13 +593,13 @@ class PPO(OnPolicyAlgorithm):
         """
         iteration = 0
 
-        total_timesteps, callback = self._setup_learn(
+        target_total_timesteps, callback, start_num_timesteps = self._setup_learn(
             total_timesteps, callback, reset_num_timesteps, tb_log_name, progress_bar
         )
 
         callback.on_training_start(locals(), globals())
 
-        while self.num_timesteps < total_timesteps:
+        while self.num_timesteps < target_total_timesteps:
             continue_training = self.collect_rollouts(
                 self.env, callback, self.rollout_buffer, n_rollout_steps=self.n_steps
             )
@@ -608,7 +608,14 @@ class PPO(OnPolicyAlgorithm):
                 break
 
             iteration += 1
-            self._update_current_progress_remaining(self.num_timesteps, total_timesteps)
+            progress_timesteps = (
+                self.num_timesteps + start_num_timesteps
+                if reset_num_timesteps
+                else self.num_timesteps
+            )
+            self._update_current_progress_remaining(
+                progress_timesteps, target_total_timesteps
+            )
 
             # Display training infos
             if log_interval is not None and iteration % log_interval == 0:
@@ -645,6 +652,11 @@ class PPO(OnPolicyAlgorithm):
 
         callback.on_training_end()
 
+        # If we reset the counter at the start, add back the previous total so the
+        # cumulative timestep count keeps increasing across training runs.
+        if reset_num_timesteps and start_num_timesteps > 0:
+            self.num_timesteps += start_num_timesteps
+
         return self
 
     def _setup_learn(
@@ -654,15 +666,24 @@ class PPO(OnPolicyAlgorithm):
         reset_num_timesteps: bool,
         tb_log_name: str,
         progress_bar: bool,
-    ):
+    ) -> Tuple[int, Any, int]:
         """Setup learning process."""
         import time
+
+        # Track how many timesteps existed before this training run
+        start_num_timesteps = self.num_timesteps
 
         if reset_num_timesteps:
             self.num_timesteps = 0
             self._episode_num = 0
 
-        self._total_timesteps = total_timesteps
+        target_total_timesteps = (
+            total_timesteps
+            if reset_num_timesteps
+            else self.num_timesteps + total_timesteps
+        )
+
+        self._total_timesteps = target_total_timesteps
         self._num_timesteps_at_start = self.num_timesteps
         self.start_time = time.time()
 
@@ -680,7 +701,7 @@ class PPO(OnPolicyAlgorithm):
         self._last_obs = self.env.reset()
         self._last_episode_starts = np.ones((self.env.num_envs,), dtype=bool)
 
-        return total_timesteps, callback
+        return target_total_timesteps, callback, start_num_timesteps
 
     def _update_learning_rate(self, optimizer):
         """Update learning rate in the optimizer."""

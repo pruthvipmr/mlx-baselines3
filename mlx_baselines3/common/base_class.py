@@ -390,6 +390,19 @@ class BaseAlgorithm(ABC):
                 base_env = gym.make("CartPole-v1")
                 env = DummyVecEnv([lambda: base_env])
 
+        # Ensure provided environments are vectorized when needed
+        if env is not None:
+            try:
+                from .vec_env import DummyVecEnv, VecEnv
+            except Exception:
+                DummyVecEnv, VecEnv = None, None  # pragma: no cover - defensive
+
+            if DummyVecEnv is not None:
+                is_vec_env = VecEnv is not None and isinstance(env, VecEnv)
+                has_num_envs = hasattr(env, "num_envs")
+                if not is_vec_env and not has_num_envs:
+                    env = DummyVecEnv([lambda: env])
+
         # Extract constructor arguments
         model_kwargs = {}
         for key in ["learning_rate", "verbose", "seed"]:

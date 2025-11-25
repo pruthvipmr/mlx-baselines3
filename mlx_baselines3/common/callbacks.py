@@ -51,6 +51,11 @@ class BaseCallback(ABC):
             model: Reference to the model being trained
         """
         self.model = model
+        if model is None:
+            self.training_env = None
+            self._init_callback()
+            return
+
         self.training_env = model.env
         self._init_callback()
 

@@ -380,11 +380,13 @@ class ReplayBuffer(BaseBuffer):
         self.timeouts = np.zeros((self.buffer_size, self.n_envs), dtype=np.bool_)
         self.has_final_obs = np.zeros((self.buffer_size, self.n_envs), dtype=np.bool_)
 
-        self.next_observations: Optional[Union[np.ndarray, Dict[str, np.ndarray]]] = None
         self.final_observations: Union[np.ndarray, Dict[str, np.ndarray]]
 
         # Store next observations unless optimizing memory
         if not self.optimize_memory_usage:
+            self.next_observations: Optional[
+                Union[np.ndarray, Dict[str, np.ndarray]]
+            ]
             if isinstance(self.observation_space, gym.spaces.Dict):
                 next_obs: Dict[str, np.ndarray] = {}
                 for key, subspace in self.observation_space.spaces.items():

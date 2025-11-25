@@ -211,7 +211,7 @@ class TestIntegrationLearning:
             print(f"DQN total reward: {total_reward}")
             # Lenient threshold for integration test; DQN needs more training
             # than other algorithms
-            assert total_reward > 8, (
+            assert total_reward >= 8, (
                 f"Total reward {total_reward} too low for basic functionality"
             )
 

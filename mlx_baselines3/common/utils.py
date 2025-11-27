@@ -3,7 +3,6 @@ MLX-specific utilities for device management, tensor operations, and helper
 functions.
 """
 
-import math
 import random
 import warnings
 from typing import Any, Callable, Dict, Mapping, Optional, Tuple, Union
@@ -235,35 +234,6 @@ def update_learning_rate(optimizer: Any, learning_rate: float) -> None:
             "Could not update learning rate: optimizer has no "
             "'learning_rate' or 'lr' attribute"
         )
-
-
-def clip_grad_norm(grads: Dict[str, Optional[mx.array]], max_norm: float) -> float:
-    """
-    Clip gradients by global norm.
-
-    Args:
-        grads: Dictionary of gradients
-        max_norm: Maximum allowed gradient norm
-
-    Returns:
-        Total gradient norm before clipping
-    """
-    # Compute total gradient norm
-    total_norm_sq = 0.0
-    for grad in grads.values():
-        if grad is not None:
-            total_norm_sq += float(mx.sum(grad**2))
-
-    total_norm = math.sqrt(total_norm_sq)
-
-    # Clip gradients if necessary
-    if total_norm > max_norm:
-        clip_coef = max_norm / (total_norm + 1e-6)
-        for key, grad in list(grads.items()):
-            if grad is not None:
-                grads[key] = grad * clip_coef
-
-    return total_norm
 
 
 def obs_as_mlx(
